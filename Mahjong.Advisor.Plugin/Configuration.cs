@@ -7,7 +7,7 @@ namespace MahjongAdvisor;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
 
     public bool ShowOverlay { get; set; } = true;
 
@@ -21,9 +21,10 @@ public sealed class Configuration : IPluginConfiguration
     public bool ShowAcceptedTiles { get; set; } = true;
 
     // --- auto-play ------------------------------------------------------
-    // Off by default. Auto-play sends real addon callbacks, so the manual
-    // suggestion mode is always one checkbox away.
-    public bool AutoPlay { get; set; }
+    // This build is set up to play by itself: auto-play and logging are on
+    // for new installs and for configs upgraded from version 1. /mjadv stop
+    // or the Automation tab returns to manual suggestions immediately.
+    public bool AutoPlay { get; set; } = true;
 
     /// <summary>Pon is the only call auto-play takes by default: it is a clean,
     /// verified `[11, option]` press and our CallAdvisor already weighs the yaku.</summary>
@@ -56,7 +57,7 @@ public sealed class Configuration : IPluginConfiguration
     public bool OpenSetupOnLaunch { get; set; }
 
     /// <summary>Write a JSONL record of every decision point for later review.</summary>
-    public bool LogGames { get; set; }
+    public bool LogGames { get; set; } = true;
 
     // --- advisor tuning -------------------------------------------------
     public double AverageWinValue { get; set; } = 1300;
@@ -86,6 +87,17 @@ public sealed class Configuration : IPluginConfiguration
     public void Initialize()
     {
         bool changed = false;
+
+        // v2 is the "just play and send the log" setup: auto-play and file
+        // logging are enabled for existing v1 configs. Toggling either off
+        // afterwards persists normally.
+        if (Version < 2)
+        {
+            AutoPlay = true;
+            LogGames = true;
+            Version = 2;
+            changed = true;
+        }
 
         var turnDelay = NormalizeDelay(
             AutoPlayTurnDelayMinMs, AutoPlayTurnDelayMaxMs, 700, 1800);

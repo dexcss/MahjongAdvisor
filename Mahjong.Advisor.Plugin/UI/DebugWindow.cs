@@ -204,6 +204,12 @@ public sealed class DebugWindow : Window
         ImGui.SameLine();
         if (ImGui.Button("Dump melds"))
             plugin.DumpMelds();
+        ImGui.SameLine();
+        if (ImGui.Button("Create diagnostic bundle"))
+            plugin.CreateDiagnosticBundle();
+        ImGui.SameLine();
+        if (ImGui.Button("Open log folder"))
+            plugin.OpenLogFolder();
     }
 
     private void DrawCurrentAdvice(BoardRead read)
@@ -310,8 +316,20 @@ public sealed class DebugWindow : Window
         UiTheme.Section("Auto-play");
         UiTheme.WrappedColored(
             "Auto-play sends the same inputs the client sends when you click. "
-            + "It is off by default. Off means suggestions only; nothing is clicked for you.",
+            + "It is on by default in this build. Off means suggestions only; nothing is clicked for you.",
             UiTheme.Muted);
+
+        if (ImGui.Button("Start auto-play session"))
+            plugin.StartSession();
+        ImGui.SameLine();
+        if (ImGui.Button("Stop + bundle"))
+        {
+            plugin.SetAutoPlay("off");
+            plugin.CreateDiagnosticBundle();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Open log folder"))
+            plugin.OpenLogFolder();
 
         bool auto = config.AutoPlay;
         if (ImGui.Checkbox("Enable auto-play", ref auto))
@@ -800,6 +818,17 @@ public sealed class DebugWindow : Window
         UiTheme.WrappedColored(
             "Win rates and readiness come from HououTables, measured across roughly "
             + "1.2 million Tenhou top-lobby games (chienshyong/houou-statistics).",
+            UiTheme.Muted);
+
+        UiTheme.Section("Diagnostics");
+        if (ImGui.Button("Create diagnostic bundle"))
+            plugin.CreateDiagnosticBundle();
+        ImGui.SameLine();
+        if (ImGui.Button("Open log folder"))
+            plugin.OpenLogFolder();
+        UiTheme.WrappedColored(
+            "The bundle contains the recent JSONL logs, config, layouts, Dalamud log tail "
+            + "and a full last-read snapshot.",
             UiTheme.Muted);
     }
 

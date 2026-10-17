@@ -5,6 +5,7 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using MahjongAdvisor.Automation;
+using MahjongAdvisor.Diagnostics;
 using MahjongAdvisor.Logging;
 using MahjongAdvisor.Reading;
 using MahjongAdvisor.UI;
@@ -28,6 +29,7 @@ public sealed class Plugin : IDalamudPlugin
     private int framesSinceRead;
     private bool disposed;
     private bool readFailureLogged;
+    private string lastAutoStatus = "";
 
     public Configuration Configuration { get; }
 
@@ -107,7 +109,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "/mjadv - show the overlay. Also: hide, toggle, setup, auto [on|off], stop, nodes, melds, hand, options, log, geometry, snap.",
+            HelpMessage = "/mjadv - show the overlay. Also: session, bundle, folder, auto [on|off], stop, setup, nodes, melds, hand, options, log, geometry, snap.",
         });
 
         PluginInterface.UiBuilder.Draw += windowSystem.Draw;
@@ -146,7 +148,7 @@ public sealed class Plugin : IDalamudPlugin
                 LastPrompt = CallPrompt.None;
                 if (read.Profile is null)
                     Reader.ResetAutoMap();
-                AutoPlay.Tick(read, CallPrompt.None, null, null);
+                RunAutoPlay(read);
                 return;
             }
 
@@ -162,7 +164,7 @@ public sealed class Plugin : IDalamudPlugin
                 LastCallAdvice = BuildCallAdvice(read, LastPrompt);
                 GameLogger.Record(read, null, LastPrompt, LastCallAdvice, PondDiagnostic(), Reader.RotatedPerSeat, Reader.DiscardCountBytes, [.. Reader.UnknownPondTextures],
                 [.. Reader.NewlyVisible.Select(n => $"{n.NodeId}@{n.X:0},{n.Y:0}:{n.TextureId}")]);
-                AutoPlay.Tick(read, LastPrompt, null, LastCallAdvice);
+                RunAutoPlay(read);
                 return;
             }
 
@@ -174,7 +176,7 @@ public sealed class Plugin : IDalamudPlugin
             LastAdvice = Configuration.Advisor.Recommend(read.Table);
             GameLogger.Record(read, LastAdvice, LastPrompt, LastCallAdvice, PondDiagnostic(), Reader.RotatedPerSeat, Reader.DiscardCountBytes, [.. Reader.UnknownPondTextures],
                 [.. Reader.NewlyVisible.Select(n => $"{n.NodeId}@{n.X:0},{n.Y:0}:{n.TextureId}")]);
-            AutoPlay.Tick(read, LastPrompt, LastAdvice, LastCallAdvice);
+            RunAutoPlay(read);
             readFailureLogged = false;
         }
         catch (Exception ex)
@@ -183,7 +185,7 @@ public sealed class Plugin : IDalamudPlugin
             LastCallAdvice = null;
             LastPrompt = CallPrompt.None;
             LastRead = BoardRead.Failed($"Read failed: {ex.Message}");
-            AutoPlay.Tick(LastRead, CallPrompt.None, null, null);
+            RunAutoPlay(LastRead);
 
             // The tick fires several times a second; log the streak once.
             if (!readFailureLogged)
@@ -328,6 +330,22 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
+    /// <summary>
+    /// Runs the automation tick and records a JSONL auto-status line whenever
+    /// the controller's status changes. This is the "why did it stop" trail.
+    /// </summary>
+    private void RunAutoPlay(BoardRead read)
+    {
+        AutoPlay.Tick(read, LastPrompt, LastAdvice, LastCallAdvice);
+
+        if (AutoPlay.LastStatus == lastAutoStatus)
+            return;
+
+        lastAutoStatus = AutoPlay.LastStatus;
+        GameLogger.RecordAutoStatus(
+            lastAutoStatus, read, LastPrompt, LastAdvice, LastCallAdvice);
+    }
+
     private string PondDiagnostic()
     {
         if (Reader.DiscardArrays.RelativeOffset is not null)
@@ -456,6 +474,15 @@ public sealed class Plugin : IDalamudPlugin
             case "config":
                 OpenSettings();
                 break;
+            case "session":
+                StartSession();
+                break;
+            case "bundle":
+                CreateDiagnosticBundle();
+                break;
+            case "folder":
+                OpenLogFolder();
+                break;
             case "auto":
                 SetAutoPlay(sub);
                 break;
@@ -493,9 +520,10 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             default:
                 Log.Information(
-                    $"Unknown argument '{verb}'. Use: /mjadv, /mjadv hide, /mjadv toggle, /mjadv setup, "
-                    + "/mjadv auto [on|off], /mjadv stop, /mjadv nodes, /mjadv melds, /mjadv hand, "
-                    + "/mjadv options, /mjadv log, /mjadv geometry, /mjadv snap.");
+                    $"Unknown argument '{verb}'. Use: /mjadv, /mjadv session, /mjadv bundle, /mjadv folder, "
+                    + "/mjadv hide, /mjadv toggle, /mjadv setup, /mjadv auto [on|off], /mjadv stop, "
+                    + "/mjadv nodes, /mjadv melds, /mjadv hand, /mjadv options, /mjadv log, "
+                    + "/mjadv geometry, /mjadv snap.");
                 break;
         }
     }
@@ -516,6 +544,82 @@ public sealed class Plugin : IDalamudPlugin
         Log.Information(enable
             ? "Auto-play ON (casual tables only). It will send real discards and calls."
             : "Auto-play OFF. Suggestions only; no inputs are sent.");
+
+        GameLogger.RecordSessionMarker(enable ? "auto-on" : "auto-off");
+    }
+
+    /// <summary>
+    /// One command to make the plugin ready for an unattended session: auto-play
+    /// on, file logging on, a fresh log file. The controller still waits for a
+    /// table and its six-second settle before sending anything.
+    /// </summary>
+    public void StartSession()
+    {
+        Configuration.AutoPlay = true;
+        Configuration.LogGames = true;
+        GameLogger.Enabled = true;
+        GameLogger.StartNewGame();
+        SaveConfiguration();
+        ShowOverlay();
+
+        lastAutoStatus = "";
+        GameLogger.RecordSessionMarker(
+            "session-start",
+            $"auto-play on; build {GameLogger.BuildStamp}; log {GameLogger.CurrentFile}");
+        Log.Information("Auto-play session started. Use /mjadv bundle when you are done.");
+    }
+
+    /// <summary>Packages logs, config, layouts and a state snapshot into one zip.</summary>
+    public void CreateDiagnosticBundle()
+    {
+        string? path = DiagnosticBundle.Create(
+            PluginInterface.GetPluginConfigDirectory(),
+            GameLogger.Directory,
+            Configuration,
+            LastRead,
+            LastAdvice,
+            LastCallAdvice,
+            LastPrompt,
+            AutoPlay,
+            GameLogger.BuildStamp,
+            PondDiagnostic(),
+            warning => Log.Warning(warning));
+
+        if (path is null)
+        {
+            Log.Warning("The diagnostic bundle could not be created.");
+            return;
+        }
+
+        GameLogger.RecordSessionMarker("diagnostics-bundle", path);
+        Log.Information($"Diagnostic bundle: {path}");
+        OpenPath(Path.GetDirectoryName(path));
+    }
+
+    /// <summary>Opens the folder that holds the JSONL logs and diagnostic bundles.</summary>
+    public void OpenLogFolder()
+    {
+        Directory.CreateDirectory(GameLogger.Directory);
+        OpenPath(GameLogger.Directory);
+    }
+
+    private void OpenPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, $"Could not open {path}.");
+        }
     }
 
     public void ShowOverlay()

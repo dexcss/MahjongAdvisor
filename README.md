@@ -2,11 +2,11 @@
 
 A Doman Mahjong discard advisor for Dalamud, by **Akari**. It reads your hand,
 the discards, the dora, the scores and the called melds, then ranks each legal
-discard by hand speed against deal-in risk. Manual suggestion mode is the
-default. An optional auto-play mode can send the same inputs for you on casual
-tables.
+discard by hand speed against deal-in risk. Auto-play and file logging are on by
+default in this build: sit at a casual table and it plays. Manual suggestion
+mode is one command away (`/mjadv stop`).
 
-**0.3.0.1** is the current public build. The engine and most of the reader were
+**0.3.1.0** is the current public build. The engine and most of the reader were
 played live before this version; the meld mapping, the call-prompt fixes, the
 expected-value model and the new auto-play controller still need a live pass.
 
@@ -64,10 +64,10 @@ Riichi is read from the marker node beside each pond. The rotation flag and the
 score-drop heuristic are dead ends on this client and are no longer used to
 declare riichi.
 
-Auto-play is **off by default**. Enable it with the Automation tab or
-`/mjadv auto on`; `/mjadv stop` turns it off immediately. Manual play and
-auto-play use the same reader and advisor, so the overlay still shows the pick
-either way.
+Auto-play and file logging are **on by default** in this build. `/mjadv stop`
+turns auto-play off immediately and leaves the overlay as suggestions only;
+`/mjadv auto on` turns it back on. Manual play and auto-play use the same reader
+and advisor, so the overlay still shows the pick either way.
 
 ## UI
 
@@ -89,6 +89,17 @@ The installer's **Open** button opens the control panel *and* the overlay;
 **Settings** opens the control panel directly on the Settings tab.
 
 ## Auto-play (casual tables only)
+
+The simplest way to run a test is:
+
+```text
+/mjadv session     # auto-play on, logging on, fresh log file
+<play 2-3 casual hanchan>
+/mjadv bundle      # zip of logs + config + layouts + last state
+```
+
+`/mjadv session` is also a button in the Automation tab. `/mjadv bundle` opens
+the folder containing the zip when it finishes.
 
 Auto-play replays the client's own FireCallback protocol:
 
@@ -134,6 +145,9 @@ Two extra guards protect the discard path:
 | `/mjadv` / `/mjadv show` | Show the overlay and reset its position |
 | `/mjadv hide` / `/mjadv toggle` | Hide or toggle the overlay |
 | `/mjadv setup` / `/mjadv config` | Open the control panel |
+| `/mjadv session` | Auto-play + logging on, start a fresh log file |
+| `/mjadv bundle` | Zip the recent logs, config, layouts and last state |
+| `/mjadv folder` | Open the logs/diagnostics folder |
 | `/mjadv auto` / `/mjadv auto [on/off]` | Toggle or set auto-play |
 | `/mjadv stop` | Turn auto-play off |
 | `/mjadv nodes` | Open the control panel on the node-mapping tab |
@@ -183,28 +197,36 @@ Two extra guards protect the discard path:
 Use a **casual** Doman Mahjong table, not a ranked/PvP mode. Suggested first
 session:
 
-1. Turn logging on (`/mjadv log`), then `/mjadv auto on`.
+1. Run `/mjadv session` (or click **Start auto-play session** in the Automation
+   tab).
 2. Play one hand and watch the first discard. If the wrong tile leaves, run
-   `/mjadv stop` immediately and send the log plus `/mjadv hand` and
-   `/mjadv options` output from the same moment.
-3. Play 2–3 full hanchan (about 8–12 hands). Check the setup panel's auto-play
-   status counters and the `Kind: "auto"` lines in the JSONL log.
-4. Verify `/mjadv melds` after at least one call by each seat.
-5. Toggle `/mjadv auto off` and confirm manual play returns to suggestion-only.
+   `/mjadv stop` immediately.
+3. Play 2–3 full hanchan (about 8–12 hands).
+4. Run `/mjadv bundle` and send the zip it opens. It contains the JSONL logs,
+   config, layouts, Dalamud log tail and a full last-read snapshot.
+5. Toggle `/mjadv stop` and confirm manual play returns to suggestion-only.
 
 The controller logs every sent input under `[MahjongAdvisor][auto]` in
-`/xllog`, and writes a `Kind: "auto"` JSONL record when file logging is on.
+`/xllog`, writes `Kind: "auto"` records for sent inputs, and writes
+`Kind: "auto-status"` records whenever its status changes (waiting, settling,
+stalled, hand-slot mismatch, and so on). That status trail is the main thing
+that makes a failed run diagnosable.
 
 ## Diagnostics
 
-Every decision can be written as one JSONL record. Turn it on with `/mjadv log`
-or the control panel; records land in
-`%APPDATA%\XIVLauncher\pluginConfigs\Mahjong.Advisor.Plugin\logs\`.
+Every decision can be written as one JSONL record. Logging is on by default;
+records land in `%APPDATA%\XIVLauncher\pluginConfigs\Mahjong.Advisor.Plugin\logs\`.
 
 Each record carries the build stamp, full table state, observation flags, every
 candidate's score, the meld readout, the raw call-prompt values and the nodes
-that became visible that tick. When something looks wrong in game, the log
-usually already contains the proof.
+that became visible that tick. Auto-play adds `Kind: "auto"` action records and
+`Kind: "auto-status"` records whenever it starts waiting, settles, stalls or
+refuses a discard.
+
+`/mjadv bundle` zips the recent logs, config, layouts, the last 5,000 lines of
+`dalamud.log` and a full last-read snapshot into
+`...\pluginConfigs\Mahjong.Advisor.Plugin\diagnostics\`. The bundle can contain
+player names from the log, so review it before sharing.
 
 ## Data sources
 
@@ -225,10 +247,10 @@ Then:
 
 ```powershell
 git add .
-git commit -m "Mahjong Advisor v0.3.0.1"
+git commit -m "Mahjong Advisor v0.3.1.0"
 git push origin main
-git tag v0.3.0.1
-git push origin v0.3.0.1
+git tag v0.3.1.0
+git push origin v0.3.1.0
 ```
 
 CI runs the tests, builds the plugin and publishes `MahjongAdvisor.zip` on the

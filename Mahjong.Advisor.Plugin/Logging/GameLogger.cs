@@ -28,6 +28,9 @@ public sealed class LogRecord
     public int RejectedTiles { get; set; }
     public bool TextureBaseShifted { get; set; }
 
+    /// <summary>Whether the display-slot hand read matched the memory hand.</summary>
+    public bool HandSlotsValid { get; set; }
+
     /// <summary>Points per seat, ours first. A riichi declaration costs exactly 1000.</summary>
     public int[] Scores { get; set; } = [];
 
@@ -83,6 +86,9 @@ public sealed class LogRecord
     public string Headline { get; set; } = "";
     public bool Folding { get; set; }
 
+    /// <summary>Auto-play controller status, for "auto-status" records.</summary>
+    public string? AutoStatus { get; set; }
+
     /// <summary>What actually happened, filled in once the next state is seen.</summary>
     public string? PlayerAction { get; set; }
 
@@ -131,7 +137,7 @@ public sealed class GameLogger : IDisposable
     private readonly object gate = new();
 
     /// <summary>Bumped whenever behaviour changes, so logs are attributable.</summary>
-    public const string BuildStamp = "2026-10-18.2";
+    public const string BuildStamp = "2026-10-18.3";
 
     private string? currentPath;
     private string lastFingerprint = "";
@@ -211,6 +217,7 @@ public sealed class GameLogger : IDisposable
             Profile = read.Profile?.Name ?? "",
             RejectedTiles = read.RejectedTiles,
             TextureBaseShifted = read.TextureBaseShifted,
+            HandSlotsValid = read.HandSlotsValid,
             SeatDiscards = [.. table.Seats.Select(s => string.Join(" ", s.Discards.Select(Tiles.Name)))],
             SeatRiichi = [.. table.Seats.Select(s => s.Riichi)],
             SeatMelds = [.. table.Seats.Select(s => string.Join(" ", s.MeldTiles.Select(Tiles.Name)))],
@@ -299,6 +306,96 @@ public sealed class GameLogger : IDisposable
             Kind = "auto",
             Headline = action,
             PlayerAction = detail,
+        });
+    }
+
+    /// <summary>
+    /// Appends a status-change line from the auto-play controller. These are
+    /// the "why did it stop / why did it wait" records: they carry the state,
+    /// hand, prompt buttons and the first few ranked options at that moment.
+    /// </summary>
+    public void RecordAutoStatus(
+        string status,
+        BoardRead? read,
+        CallPrompt prompt,
+        Advice? advice,
+        CallAdvice? callAdvice)
+    {
+        if (!Enabled)
+            return;
+
+        var record = new LogRecord
+        {
+            Time = DateTime.UtcNow.ToString("O"),
+            Build = BuildStamp,
+            Kind = "auto-status",
+            AutoStatus = status,
+            Headline = status,
+            StateCode = read?.StateCode ?? -1,
+            Profile = read?.Profile?.Name ?? "",
+            HandSlotsValid = read?.HandSlotsValid ?? false,
+            RejectedTiles = read?.RejectedTiles ?? 0,
+            TextureBaseShifted = read?.TextureBaseShifted ?? false,
+        };
+
+        if (read?.Table is { } table)
+        {
+            record.Hand = Tiles.Format(table.Hand);
+            record.CalledMelds = table.CalledMelds;
+            record.Wall = table.WallRemaining;
+            record.Dora = string.Join(" ", table.DoraIndicators.Select(Tiles.Name));
+            record.Observed = table.Observations.ToString();
+            record.MeldObserved = table.Observations.HasFlag(Observed.OpponentMelds);
+            record.HandOrder = string.Join(" ", read.HandOrder.Select(Tiles.Name));
+            record.Scores = [.. table.Scores];
+            record.SeatRiichi = [.. table.Seats.Select(s => s.Riichi)];
+            record.SeatDiscards = [.. table.Seats.Select(s => string.Join(" ", s.Discards.Select(Tiles.Name)))];
+            record.SeatMelds = [.. table.Seats.Select(s => string.Join(" ", s.MeldTiles.Select(Tiles.Name)))];
+        }
+
+        if (prompt.Available.Count > 0)
+        {
+            record.ClaimedTile = prompt.HasClaimedTile ? Tiles.Name(prompt.ClaimedTile) : null;
+            record.PromptOptions = [.. prompt.Available.Select(a => a.ToString())];
+            record.PromptLabels = [.. prompt.RawLabels];
+            record.PromptRawClaim = [.. prompt.RawClaimCandidates];
+        }
+
+        if (advice?.Best is { } best)
+        {
+            record.Headline = $"{status} | discard {Tiles.Name(best.Tile)} "
+                + $"({best.ResultingShanten}-shanten, {best.Ukeire} tiles)";
+            record.Options = [.. advice.Options.Take(3).Select(o => new LoggedOption
+            {
+                Tile = Tiles.Name(o.Tile),
+                Shanten = o.ResultingShanten,
+                Ukeire = o.Ukeire,
+                Danger = Math.Round(o.Risk.DealInRate, 4),
+                DangerReason = o.Risk.Reason.ToString(),
+                Score = Math.Round(o.Score, 2),
+                Rationale = o.Rationale,
+            })];
+        }
+
+        if (callAdvice?.Best is { } call)
+            record.Headline = $"{status} | call {call.Kind}";
+
+        Append(record);
+    }
+
+    /// <summary>Marks the start/stop of an auto-play session in the current file.</summary>
+    public void RecordSessionMarker(string marker, string? detail = null)
+    {
+        if (!Enabled)
+            return;
+
+        Append(new LogRecord
+        {
+            Time = DateTime.UtcNow.ToString("O"),
+            Build = BuildStamp,
+            Kind = "session",
+            Headline = marker,
+            AutoStatus = detail,
         });
     }
 
