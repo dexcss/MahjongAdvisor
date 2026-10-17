@@ -1,13 +1,14 @@
 # Mahjong Advisor
 
-A Doman Mahjong discard advisor for Dalamud. It reads your hand, the discards,
-the dora, the scores and the called melds, then ranks each legal discard by hand
-speed against deal-in risk. It is a suggestion overlay — it never clicks
-anything for you.
+A Doman Mahjong discard advisor for Dalamud, by **Akari**. It reads your hand,
+the discards, the dora, the scores and the called melds, then ranks each legal
+discard by hand speed against deal-in risk. Manual suggestion mode is the
+default. An optional auto-play mode can send the same inputs for you on casual
+tables.
 
-**0.2.0.2** is the current public build. The engine and most of the reader were
-played live before this version; the meld mapping, the call-prompt fixes and the
-new expected-value model are the parts that still need a live pass.
+**0.3.0.0** is the current public build. The engine and most of the reader were
+played live before this version; the meld mapping, the call-prompt fixes, the
+expected-value model and the new auto-play controller still need a live pass.
 
 ## Projects
 
@@ -15,7 +16,7 @@ new expected-value model are the parts that still need a live pass.
 |---|---|
 | `Mahjong.Advisor` | Pure engine — shanten, ukeire, safety, threat model, discard and call ranking. No Dalamud reference. |
 | `Mahjong.Advisor.Tests` | 190 xUnit tests over the engine, including the shanten vectors. |
-| `Mahjong.Advisor.Plugin` | Dalamud shell — addon reading, overlay, setup window, JSONL game log. |
+| `Mahjong.Advisor.Plugin` | Dalamud shell — addon reading, overlay, control panel, JSONL game log, optional auto-play actuator. |
 | `Mahjong.Advisor.Simulator` | Offline console app for tuning parameters against identical deals. |
 
 The engine stays on `net8.0` so it loads under whatever runtime the host
@@ -55,7 +56,7 @@ step.
 - Called-meld strips use the known node families (`112`-`115`). A mapping is
   only accepted when our own meld count agrees with the hand shape, so a wrong
   id degrades to "meld count unknown" instead of silently reading zero melds.
-- If detection fails on your client, `/mjadv nodes` opens the setup window with
+- If detection fails on your client, `/mjadv nodes` opens the control panel with
   the manual override and the node-tree dump. `/mjadv melds` prints the per-seat
   meld readout to the Dalamud log (`/xllog`).
 
@@ -63,15 +64,82 @@ Riichi is read from the marker node beside each pond. The rotation flag and the
 score-drop heuristic are dead ends on this client and are no longer used to
 declare riichi.
 
+Auto-play is **off by default**. Enable it with the Automation tab or
+`/mjadv auto on`; `/mjadv stop` turns it off immediately. Manual play and
+auto-play use the same reader and advisor, so the overlay still shows the pick
+either way.
+
+## UI
+
+The **overlay** is the compact in-game window: current recommendation, the hand
+in display order with the suggested tile bracketed, danger, alternatives and the
+auto-play state.
+
+The **control panel** is the installer's Open/Settings window. It has five tabs:
+
+| Tab | Contents |
+|---|---|
+| Advisor | table state, recommendation, opponents, observation flags and read diagnostics |
+| Automation | auto-play master switch, pon/chi/kan policy, result advancement and timing |
+| Setup | pond/meld/hand-slot detection, manual override, node-tree and tile dumps |
+| Settings | overlay visibility, logging and advisor tuning |
+| About | build, author, commands and data sources |
+
+The installer's **Open** button opens the control panel *and* the overlay;
+**Settings** opens the control panel directly on the Settings tab.
+
+## Auto-play (casual tables only)
+
+Auto-play replays the client's own FireCallback protocol:
+
+- discard: `[15, iconId]` then `[7, slot]`
+- call / self-action: `[11, option]`
+- result screens: `[14]` at the agari modal, `[17]` at the end-of-hand transition
+
+It deliberately **does not** advance the new-hand screen. The game fires that
+acknowledgement itself; sending a second one desynced live tables in the
+reference implementation.
+
+Defaults are conservative:
+
+- **Pon**: taken when the advisor says it is worth opening the hand.
+- **Ron / tsumo**: always taken.
+- **Riichi**: declared when the advisor says it is the best line.
+- **Chi**: off. The shape-picker surface is not verified; if you enable it, the
+  controller stops at the shape picker and asks you to choose manually.
+- **Kan**: off. A kan flips another dora indicator for every seat.
+- A self-kan prompt that the advisor declines is answered with Pass so it cannot
+  block the discard surface.
+- Nine-terminals/honours is aborted unless the hand is a real kokushi attempt
+  (thirteen-orphans shanten 2 or better).
+
+The controller waits six seconds after a table appears before sending anything,
+waits for a full readable hand, uses humanized think times, and retries a popup
+fire up to four times if the prompt animation swallowed it. `/mjadv auto off` or
+`/mjadv stop` is the panic switch.
+
+Two extra guards protect the discard path:
+
+- The display-slot tiles must exactly match the hand array before a discard is
+  sent. A stale/shifted node id fails closed rather than cutting a tile you do
+  not hold.
+- After declaring riichi, the follow-up discard is chosen from the tenpai-keeping
+  options and is not sent until the Riichi/Pass prompt has closed. The generic
+  recommendation is never used for that cut.
+
 ## Commands
 
 | Command | Action |
 |---|---|
 | `/mjadv` / `/mjadv show` | Show the overlay and reset its position |
 | `/mjadv hide` / `/mjadv toggle` | Hide or toggle the overlay |
-| `/mjadv setup` / `/mjadv config` | Open the setup window |
-| `/mjadv nodes` | Open setup on the node-mapping tab |
+| `/mjadv setup` / `/mjadv config` | Open the control panel |
+| `/mjadv auto` / `/mjadv auto [on/off]` | Toggle or set auto-play |
+| `/mjadv stop` | Turn auto-play off |
+| `/mjadv nodes` | Open the control panel on the node-mapping tab |
 | `/mjadv melds` | Log each seat's meld count and tiles, plus the configured node families |
+| `/mjadv hand` | Log the display-slot order, tile and icon id of every visible hand tile |
+| `/mjadv options` | Log the current popup buttons and their `[11, n]` indices |
 | `/mjadv log` | Toggle the JSONL decision log |
 | `/mjadv geometry` | Dump tile geometry to a TSV file |
 | `/mjadv snap` | Dump every visible node id to a TSV file (for snapshot diffing) |
@@ -93,7 +161,10 @@ declare riichi.
 - The meld container mapping and the readiness prior that uses it.
 - Ron / tsumo / self-kan prompt handling.
 - The expected-value discard model and the push horizon of 2.
-- Opening the setup window only when asked.
+- Opening the control panel only when asked.
+- The auto-play controller: discard handshake, option indices, popup retries,
+  result advancement and riichi follow-up. The protocol is taken from the
+  reference solver's live captures, but this integration has not been played.
 
 **Known limits**
 
@@ -107,10 +178,27 @@ declare riichi.
   roughly 21% / 13% / 16%. Use it to rank settings against each other, never to
   judge whether the advisor is good.
 
+## Testing auto-play
+
+Use a **casual** Doman Mahjong table, not a ranked/PvP mode. Suggested first
+session:
+
+1. Turn logging on (`/mjadv log`), then `/mjadv auto on`.
+2. Play one hand and watch the first discard. If the wrong tile leaves, run
+   `/mjadv stop` immediately and send the log plus `/mjadv hand` and
+   `/mjadv options` output from the same moment.
+3. Play 2–3 full hanchan (about 8–12 hands). Check the setup panel's auto-play
+   status counters and the `Kind: "auto"` lines in the JSONL log.
+4. Verify `/mjadv melds` after at least one call by each seat.
+5. Toggle `/mjadv auto off` and confirm manual play returns to suggestion-only.
+
+The controller logs every sent input under `[MahjongAdvisor][auto]` in
+`/xllog`, and writes a `Kind: "auto"` JSONL record when file logging is on.
+
 ## Diagnostics
 
 Every decision can be written as one JSONL record. Turn it on with `/mjadv log`
-or the setup window; records land in
+or the control panel; records land in
 `%APPDATA%\XIVLauncher\pluginConfigs\Mahjong.Advisor.Plugin\logs\`.
 
 Each record carries the build stamp, full table state, observation flags, every
@@ -137,10 +225,10 @@ Then:
 
 ```powershell
 git add .
-git commit -m "Mahjong Advisor v0.2.0.2"
+git commit -m "Mahjong Advisor v0.3.0.0"
 git push origin main
-git tag v0.2.0.2
-git push origin v0.2.0.2
+git tag v0.3.0.0
+git push origin v0.3.0.0
 ```
 
 CI runs the tests, builds the plugin and publishes `MahjongAdvisor.zip` on the

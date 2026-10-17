@@ -22,7 +22,13 @@
     "ourTurnDiscard": 30,
     "selfDeclareList": 6,
     "callPrompt": 15,
+    "callPromptList": 28,
+    "chiVariantSelect": 25,
+    "handResult": 29,
+    "endOfHand": 32,
+    "newHand": 2,
     "postDrawIdle": 5,
+    "actionButtonBaseIndex": 7,
     "stateCodeValueIndex": 0,
     "wallCountValueIndex": 1
   },
@@ -55,5 +61,23 @@
     120,
     123,
     126
-  ]
+  ],
+  "handSlotNodeIds": [
+    134,
+    1340001,
+    1340002,
+    1340003,
+    1340004,
+    1340005,
+    1340006,
+    1340007,
+    1340008,
+    1340009,
+    1340010,
+    1340011,
+    1340012
+  ],
+  "drawnTileNodeId": 135,
+  "handButtonNodeListIndex": 0,
+  "handImageNodeListIndex": 4
 }

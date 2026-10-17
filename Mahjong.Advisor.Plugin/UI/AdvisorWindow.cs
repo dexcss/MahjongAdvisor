@@ -2,6 +2,7 @@ using Mahjong.Advisor;
 using System.Numerics;
 using Dalamud.Interface.Windowing;
 using Dalamud.Bindings.ImGui;
+using MahjongAdvisor.Logging;
 using MahjongAdvisor.Reading;
 
 namespace MahjongAdvisor.UI;
@@ -11,22 +12,17 @@ public sealed class AdvisorWindow : Window
     private readonly Plugin plugin;
     private bool positionResetPending;
 
-    private static readonly Vector4 Good = new(0.45f, 0.85f, 0.45f, 1f);
-    private static readonly Vector4 Warn = new(0.95f, 0.75f, 0.30f, 1f);
-    private static readonly Vector4 Bad = new(0.92f, 0.42f, 0.42f, 1f);
-    private static readonly Vector4 Muted = new(0.65f, 0.65f, 0.65f, 1f);
-
     public AdvisorWindow(Plugin plugin)
         : base("Mahjong Advisor##mjadv-main")
     {
         ArgumentNullException.ThrowIfNull(plugin);
         this.plugin = plugin;
-        Size = new Vector2(340, 260);
+        Size = new Vector2(380, 360);
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(280, 140),
-            MaximumSize = new Vector2(700, 900),
+            MinimumSize = new Vector2(310, 190),
+            MaximumSize = new Vector2(720, 900),
         };
     }
 
@@ -50,7 +46,7 @@ public sealed class AdvisorWindow : Window
         if (positionResetPending)
         {
             positionResetPending = false;
-            Position = new Vector2(60, 60);
+            Position = new Vector2(70, 70);
             PositionCondition = ImGuiCond.Always;
         }
         else
@@ -64,115 +60,114 @@ public sealed class AdvisorWindow : Window
         var read = plugin.LastRead;
         if (read is null || !read.Ok || read.Table is null)
         {
-            ImGui.PushStyleColor(ImGuiCol.Text, Muted);
-            ImGui.PushTextWrapPos(ImGui.GetContentRegionAvail().X);
-            ImGui.TextUnformatted(read?.Status ?? "Waiting for a mahjong table.");
-            ImGui.PopTextWrapPos();
-            ImGui.PopStyleColor();
+            DrawNoTable(read);
             return;
         }
 
-        // A call prompt must be handled BEFORE the waiting-for-a-draw case: during
-        // a prompt the hand is 13 tiles, so that branch was swallowing every call.
-        if (plugin.LastCallAdvice is { Best: not null } prompt)
+        DrawHeader(read);
+
+        if (plugin.LastCallAdvice is { Best: not null } call)
         {
-            DrawStandings(read.Table);
-            DrawObservationBanner(read.Table);
-            ImGui.Separator();
-            DrawCallAdvice(prompt);
+            DrawCallAdvice(read, call);
+            DrawFooter(read);
             return;
         }
 
         var advice = plugin.LastAdvice;
         if (advice is null)
         {
-            // A legal 3n+1 hand means it is not our decision point right now.
-            int total = Tiles.Total(read.Table.Hand);
-            string msg = total % 3 == 1
-                ? "Waiting for your draw..."
-                : "Reading hand...";
-            ImGui.TextColored(Muted, msg);
+            DrawWaiting(read);
+            DrawFooter(read);
             return;
         }
 
-        DrawObservationBanner(read.Table);
+        DrawDiscardAdvice(read, advice);
+        DrawFooter(read);
+    }
+
+    private void DrawHeader(BoardRead read)
+    {
+        bool auto = plugin.Configuration.AutoPlay;
+
+        ImGui.TextColored(auto ? UiTheme.Warn : UiTheme.Muted, auto ? "AUTO-PLAY" : "MANUAL");
+        ImGui.SameLine();
+        ImGui.TextColored(UiTheme.Muted, "| " + StateLabel(read));
+
+        ImGui.SameLine();
+        if (auto)
+        {
+            if (ImGui.Button("Stop##overlay-auto"))
+                plugin.SetAutoPlay("off");
+        }
+        else if (ImGui.Button("Enable auto##overlay-auto"))
+        {
+            plugin.SetAutoPlay("on");
+        }
+
+        if (auto)
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(UiTheme.Muted, plugin.AutoPlay.LastStatus);
+        }
+
         ImGui.Separator();
+    }
 
-
-
+    private void DrawDiscardAdvice(BoardRead read, Advice advice)
+    {
         var best = advice.Best;
         if (best is null)
         {
-            ImGui.PushTextWrapPos(ImGui.GetContentRegionAvail().X);
-            ImGui.TextColored(Muted, advice.Headline);
-            ImGui.PopTextWrapPos();
+            UiTheme.Wrapped(advice.Headline);
             return;
         }
 
-        var headlineColour = advice.Folding ? Warn : Good;
-        ImGui.PushStyleColor(ImGuiCol.Text, headlineColour);
-        ImGui.SetWindowFontScale(1.35f);
+        ImGui.TextColored(UiTheme.Muted, advice.Folding ? "BEST DEFENCE" : "BEST DISCARD");
+
+        var colour = advice.Folding ? UiTheme.Warn : UiTheme.Good;
+        ImGui.PushStyleColor(ImGuiCol.Text, colour);
+        ImGui.SetWindowFontScale(1.55f);
         ImGui.TextUnformatted(Tiles.Describe(best.Tile));
         ImGui.SetWindowFontScale(1.0f);
         ImGui.PopStyleColor();
 
         ImGui.SameLine();
-        ImGui.TextColored(Muted, ShapeLabel(best.ResultingShanten));
+        ImGui.TextColored(UiTheme.Muted, UiTheme.ShapeLabel(best.ResultingShanten));
 
-        DrawHandPosition(best.Tile);
-        DrawHandStrip(best.Tile);
+        DrawHandStrip(read, best.Tile);
+        DrawHandPosition(read, best.Tile);
 
-        var barred = read.Table.ForbiddenDiscards;
+        ImGui.Spacing();
+        UiTheme.Wrapped(advice.Headline);
+
+        var table = read.Table!;
+        var barred = table.ForbiddenDiscards;
         if (barred.Count > 0)
         {
-            ImGui.TextColored(Muted,
+            ImGui.TextColored(UiTheme.Muted,
                 "Barred after your call: " + string.Join(", ", barred.Select(Tiles.DescribeShort)));
         }
 
-        ImGui.PushTextWrapPos(ImGui.GetContentRegionAvail().X);
-        ImGui.TextUnformatted(advice.Headline);
-        ImGui.PopTextWrapPos();
-
         if (plugin.Configuration.ShowAcceptedTiles && best.Ukeire > 0)
-            DrawAcceptedTiles(read.Table, best);
+            DrawAcceptedTiles(table, best);
 
-        int alternatives = plugin.Configuration.AlternativesShown;
-        if (alternatives > 0 && advice.Options.Count > 1)
-        {
-            ImGui.Spacing();
-            ImGui.TextColored(Muted, "Alternatives");
-            if (ImGui.BeginTable("##mjadv-alts", 4, ImGuiTableFlags.SizingStretchProp))
-            {
-                ImGui.TableSetupColumn("Tile", ImGuiTableColumnFlags.WidthFixed, 68);
-                ImGui.TableSetupColumn("Shape", ImGuiTableColumnFlags.WidthFixed, 60);
-                ImGui.TableSetupColumn("Tiles", ImGuiTableColumnFlags.WidthFixed, 46);
-                ImGui.TableSetupColumn("Danger");
-
-                foreach (var option in advice.Options.Skip(1).Take(alternatives))
-                {
-                    ImGui.TableNextRow();
-                    ImGui.TableNextColumn();
-                    ImGui.TextUnformatted(Tiles.DescribeShort(option.Tile));
-                    ImGui.TableNextColumn();
-                    ImGui.TextColored(Muted, ShapeLabel(option.ResultingShanten));
-                    ImGui.TableNextColumn();
-                    ImGui.TextUnformatted(option.Ukeire.ToString());
-                    ImGui.TableNextColumn();
-                    DrawDanger(read.Table, option);
-                }
-
-                ImGui.EndTable();
-            }
-        }
+        DrawAlternatives(table, advice);
     }
 
-    private void DrawCallAdvice(CallAdvice call)
+    private void DrawCallAdvice(BoardRead read, CallAdvice call)
     {
         var best = call.Best!;
-        var colour = best.Kind == CallKind.Pass ? Muted : Good;
+        var colour = best.Kind switch
+        {
+            CallKind.Pass => UiTheme.Muted,
+            CallKind.Ron or CallKind.Tsumo => UiTheme.Good,
+            _ => UiTheme.Warn,
+        };
+
+        ImGui.TextColored(UiTheme.Muted, "CALL DECISION");
 
         ImGui.PushStyleColor(ImGuiCol.Text, colour);
-        ImGui.SetWindowFontScale(1.25f);
+        ImGui.SetWindowFontScale(1.45f);
         ImGui.TextUnformatted(best.Kind.ToString().ToUpperInvariant());
         ImGui.SetWindowFontScale(1.0f);
         ImGui.PopStyleColor();
@@ -180,171 +175,171 @@ public sealed class AdvisorWindow : Window
         if (plugin.LastPrompt.HasClaimedTile)
         {
             ImGui.SameLine();
-            ImGui.TextColored(Muted, $"on {Tiles.Describe(plugin.LastPrompt.ClaimedTile)}");
+            ImGui.TextColored(UiTheme.Muted, $"on {Tiles.Describe(plugin.LastPrompt.ClaimedTile)}");
         }
 
-        ImGui.PushTextWrapPos(ImGui.GetContentRegionAvail().X);
-        ImGui.TextUnformatted(call.Headline);
-        ImGui.PopTextWrapPos();
+        ImGui.Spacing();
+        UiTheme.Wrapped(call.Headline);
 
         if (best.Kind == CallKind.Riichi && plugin.LastAdvice?.Best is { } cut)
         {
-            ImGui.TextColored(Good, $"Then discard {Tiles.Describe(cut.Tile)}");
-            DrawHandPosition(cut.Tile);
+            ImGui.TextColored(UiTheme.Good, $"Then discard {Tiles.Describe(cut.Tile)}");
+            DrawHandPosition(read, cut.Tile);
         }
 
         if (best.UsedFromHand.Count > 0)
         {
-            ImGui.TextColored(Good,
+            ImGui.TextColored(UiTheme.Good,
                 "Use your " + string.Join(" + ", best.UsedFromHand.Select(Tiles.Describe)));
-            ImGui.TextColored(Muted, "If the game offers a choice of shapes, pick that one.");
+            ImGui.TextColored(UiTheme.Muted, "If the game offers a choice of shapes, pick that one.");
         }
 
         ImGui.Spacing();
-        ImGui.TextColored(Muted, "Options");
-        foreach (var option in call.Options.Take(4))
+        ImGui.TextColored(UiTheme.Muted, "Options");
+        if (ImGui.BeginTable("##mj-call-options", 4,
+                ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
         {
-            var tint = option.YakuAtRisk ? Bad : Muted;
-            string shape = option.UsedFromHand.Count > 0
-                ? "  (" + string.Join("+", option.UsedFromHand.Select(Tiles.DescribeShort)) + ")"
-                : "";
-            ImGui.TextColored(tint,
-                $"{option.Kind,-7} {option.ResultingShanten}-shanten  {option.Ukeire} tiles{shape}");
-            if (ImGui.IsItemHovered())
-                ImGui.SetTooltip(option.Rationale);
+            ImGui.TableSetupColumn("Call", ImGuiTableColumnFlags.WidthFixed, 64);
+            ImGui.TableSetupColumn("Shape", ImGuiTableColumnFlags.WidthFixed, 68);
+            ImGui.TableSetupColumn("Tiles", ImGuiTableColumnFlags.WidthFixed, 52);
+            ImGui.TableSetupColumn("Yaku");
+            ImGui.TableHeadersRow();
+
+            foreach (var option in call.Options.Take(5))
+            {
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                ImGui.TextColored(option.YakuAtRisk ? UiTheme.Bad : UiTheme.Text,
+                    option.Kind.ToString());
+                ImGui.TableNextColumn();
+                ImGui.TextColored(UiTheme.Muted, UiTheme.ShapeLabel(option.ResultingShanten));
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(option.Ukeire.ToString());
+                ImGui.TableNextColumn();
+                ImGui.TextColored(option.YakuAtRisk ? UiTheme.Bad : UiTheme.Good,
+                    option.YakuAtRisk ? "at risk" : "ok");
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip(option.Rationale);
+            }
+
+            ImGui.EndTable();
+        }
+
+        if (plugin.LastPrompt.Options.Count > 0 && ImGui.CollapsingHeader("Popup buttons"))
+        {
+            foreach (var option in plugin.LastPrompt.Options)
+                ImGui.TextColored(UiTheme.Muted, $"[11,{option.Option}]  {option.Label}");
         }
     }
 
     /// <summary>
-    /// Draws the whole hand in order with the suggested tile marked, so there is
-    /// no counting or tile-name matching to do.
+    /// Draws the hand in display order with the recommended tile marked. The
+    /// display order is what the client's discard callback uses, so it is also
+    /// the safest thing to show the player.
     /// </summary>
-    private void DrawHandStrip(int suggested)
+    private static void DrawHandStrip(BoardRead read, int suggested)
     {
-        var order = plugin.LastRead?.HandOrder;
-        if (order is null || order.Count == 0)
-            return;
-
-        bool marked = false;
-        for (int i = 0; i < order.Count; i++)
+        if (read.HandSlotsValid && read.HandSlots.Count > 0)
         {
-            bool isPick = !marked && order[i] == suggested;
-            if (isPick)
-                marked = true;
+            ImGui.TextColored(UiTheme.Muted, "Your hand (left to right)");
+            if (ImGui.BeginTable("##mj-hand", 7, ImGuiTableFlags.SizingFixedFit))
+            {
+                for (int i = 0; i < 7; i++)
+                    ImGui.TableSetupColumn("##tile", ImGuiTableColumnFlags.WidthFixed, 46);
 
-            if (i > 0)
-                ImGui.SameLine(0, 4);
+                bool marked = false;
+                foreach (var slot in read.HandSlots)
+                {
+                    if (!slot.IsValid)
+                        continue;
 
-            if (isPick)
-                ImGui.TextColored(Good, $"[{Tiles.DescribeShort(order[i])}]");
-            else
-                ImGui.TextColored(Muted, Tiles.DescribeShort(order[i]));
+                    ImGui.TableNextColumn();
+                    bool isPick = !marked && slot.Tile == suggested;
+                    if (isPick)
+                        marked = true;
+
+                    var colour = isPick ? UiTheme.Good : slot.IsRed ? UiTheme.Red : UiTheme.Muted;
+                    string label = Tiles.DescribeShort(slot.Tile)
+                        + (slot.IsRed ? "*" : "");
+                    if (isPick)
+                        label = $"[{label}]";
+
+                    ImGui.TextColored(colour, label);
+                    if (ImGui.IsItemHovered())
+                    {
+                        string red = slot.IsRed ? ", red five" : "";
+                        ImGui.SetTooltip($"{Tiles.Describe(slot.Tile)} - slot {slot.Slot + 1}{red}");
+                    }
+                }
+
+                ImGui.EndTable();
+            }
+
+            int melds = read.Table?.CalledMelds ?? 0;
+            if (melds > 0)
+            {
+                ImGui.TextColored(UiTheme.Muted,
+                    $"(plus {melds} called meld{(melds > 1 ? "s" : "")}, shown separately in game)");
+            }
+
+            return;
         }
 
-        int melds = plugin.LastRead?.Table?.CalledMelds ?? 0;
-        if (melds > 0)
-            ImGui.TextColored(Muted, $"(plus {melds} called meld{(melds > 1 ? "s" : "")}, shown separately in game)");
-    }
-
-    /// <summary>
-    /// Names where the tile sits in the on-screen hand. Unambiguous even if the
-    /// suit wording does not match the client's exactly.
-    /// </summary>
-    private void DrawHandPosition(int tile)
-    {
-        var order = plugin.LastRead?.HandOrder;
-        if (order is null || order.Count == 0)
+        var order = read.HandOrder;
+        if (order.Count == 0)
             return;
 
-        var slots = new List<int>();
+        ImGui.TextColored(UiTheme.Muted, "Your hand");
+        bool fallbackMarked = false;
+        var parts = new List<string>(order.Count);
+        foreach (int tile in order)
+        {
+            bool isPick = !fallbackMarked && tile == suggested;
+            if (isPick)
+                fallbackMarked = true;
+            parts.Add(isPick ? $"[{Tiles.DescribeShort(tile)}]" : Tiles.DescribeShort(tile));
+        }
+
+        UiTheme.Wrapped(string.Join("  ", parts));
+    }
+
+    private static void DrawHandPosition(BoardRead read, int tile)
+    {
+        if (read.HandSlotsValid && read.HandSlots.Count > 0)
+        {
+            var slots = read.HandSlots
+                .Where(s => s.IsValid && s.Tile == tile)
+                .Select(s => s.Slot + 1)
+                .ToList();
+
+            if (slots.Count == 0)
+                return;
+
+            string where = slots.Count == 1
+                ? $"Slot {slots[0]} of 14, counting from the left"
+                : $"Slots {string.Join(" or ", slots)} of 14, counting from the left";
+            ImGui.TextColored(UiTheme.Good, where);
+            return;
+        }
+
+        var order = read.HandOrder;
+        if (order.Count == 0)
+            return;
+
+        var fallback = new List<int>();
         for (int i = 0; i < order.Count; i++)
         {
             if (order[i] == tile)
-                slots.Add(i + 1);
+                fallback.Add(i + 1);
         }
 
-        if (slots.Count == 0)
+        if (fallback.Count == 0)
             return;
 
-        string where = slots.Count == 1
-            ? $"position {slots[0]} of {order.Count}, counting from the left"
-            : $"positions {string.Join(" or ", slots)} of {order.Count}, from the left";
-
-        ImGui.TextColored(Good, where);
-    }
-
-    private static void DrawStandings(TableState table)
-    {
-        if (table.Scores.Count != 4)
-            return;
-
-        int rank = PlacementAdjuster.RankOf(table.Scores);
-        string place = PlacementAdjuster.Describe(rank);
-        int gap = PlacementAdjuster.GapToSecond(table.Scores);
-
-        var colour = rank switch
-        {
-            1 => Good,
-            4 => Bad,
-            _ => Muted,
-        };
-
-        string stance = rank switch
-        {
-            1 when gap >= 8000 => "big lead - playing safe",
-            1 => "in front - playing tighter",
-            4 => "last - chasing value",
-            _ => "middle of the pack",
-        };
-
-        ImGui.TextColored(colour, $"{table.Scores[0]:N0}  ({place}, {stance})");
-    }
-
-    private void DrawObservationBanner(TableState table)
-    {
-        bool safetyReady = table.Observations.HasFlag(Observed.Discards);
-        if (safetyReady)
-        {
-            var threats = new ThreatModel().Evaluate(table);
-            string[] names = ["", "Right", "Across", "Left"];
-
-            var parts = threats
-                .Where(t => t.Riichi || t.TenpaiProbability >= 0.2)
-                .Select(t => t.Riichi
-                    ? $"{names[t.Seat]}: RIICHI"
-                    : $"{names[t.Seat]}: {t.TenpaiProbability * 100:0}% ready")
-                .ToArray();
-
-            if (parts.Length == 0)
-                ImGui.TextColored(Good, "No one looks close yet");
-            else
-                ImGui.TextColored(threats.Any(t => t.Riichi) ? Bad : Warn, string.Join("   ", parts));
-
-            if (!table.Observations.HasFlag(Observed.OpponentMelds))
-            {
-                ImGui.TextColored(Muted,
-                    "Called melds not read - readiness may be underestimated. /mjadv melds to diagnose.");
-            }
-
-            // A terminal-hungry pond turns the usual safe tiles into the worst ones.
-            for (int seat = 1; seat < table.Seats.Length; seat++)
-            {
-                var read = DiscardReader.Read(table.Seats[seat].Discards);
-                string note = DiscardReader.Describe(read);
-                if (note.Length > 0)
-                    ImGui.TextColored(Bad, $"{names[seat]}: {note}");
-            }
-
-            return;
-        }
-
-        ImGui.PushStyleColor(ImGuiCol.Text, Warn);
-        ImGui.PushTextWrapPos(ImGui.GetContentRegionAvail().X);
-        ImGui.TextUnformatted(
-            "Efficiency only - no danger scoring yet. The discard piles are found automatically "
-            + "once a few tiles are down.");
-        ImGui.PopTextWrapPos();
-        ImGui.PopStyleColor();
+        string fallbackWhere = fallback.Count == 1
+            ? $"Position {fallback[0]} of {order.Count}, counting from the left"
+            : $"Positions {string.Join(" or ", fallback)} of {order.Count}, from the left";
+        ImGui.TextColored(UiTheme.Good, fallbackWhere);
     }
 
     private static void DrawAcceptedTiles(TableState table, DiscardOption best)
@@ -356,33 +351,65 @@ public sealed class AdvisorWindow : Window
             return;
 
         string label = best.ResultingShanten == 0 ? "Waiting on" : "Accepts";
-        string list = string.Join(",  ", result.Accepted.Select(a => $"{Tiles.DescribeShort(a.Tile)} x{a.Live}"));
+        string list = string.Join(",  ",
+            result.Accepted.Select(a => $"{Tiles.DescribeShort(a.Tile)} x{a.Live}"));
 
         ImGui.Spacing();
-        ImGui.TextColored(Muted, $"{label} ({result.Width})");
-        ImGui.PushTextWrapPos(ImGui.GetContentRegionAvail().X);
-        ImGui.TextUnformatted(list);
-        ImGui.PopTextWrapPos();
+        ImGui.TextColored(UiTheme.Muted, $"{label} ({result.Width})");
+        UiTheme.Wrapped(list);
+    }
+
+    private static void DrawAlternatives(TableState table, Advice advice)
+    {
+        int alternatives = Math.Clamp(advice.Options.Count - 1, 0, 5);
+        if (alternatives <= 0)
+            return;
+
+        ImGui.Spacing();
+        ImGui.TextColored(UiTheme.Muted, "Alternatives");
+        if (!ImGui.BeginTable("##mj-alternatives", 4,
+                ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
+        {
+            return;
+        }
+
+        ImGui.TableSetupColumn("Tile", ImGuiTableColumnFlags.WidthFixed, 68);
+        ImGui.TableSetupColumn("Shape", ImGuiTableColumnFlags.WidthFixed, 68);
+        ImGui.TableSetupColumn("Tiles", ImGuiTableColumnFlags.WidthFixed, 46);
+        ImGui.TableSetupColumn("Danger");
+        ImGui.TableHeadersRow();
+
+        foreach (var option in advice.Options.Skip(1).Take(alternatives))
+        {
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(Tiles.DescribeShort(option.Tile));
+            ImGui.TableNextColumn();
+            ImGui.TextColored(UiTheme.Muted, UiTheme.ShapeLabel(option.ResultingShanten));
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(option.Ukeire.ToString());
+            ImGui.TableNextColumn();
+            DrawDanger(table, option);
+        }
+
+        ImGui.EndTable();
     }
 
     private static void DrawDanger(TableState table, DiscardOption option)
     {
-        // Danger is usable as soon as the ponds are readable. SafetyReady also
-        // requires meld reading, but withholding the number until then hid a
-        // real riichi risk behind a dash.
         if (!table.Observations.HasFlag(Observed.Discards)
             || option.Risk.Reason == SafetyReason.Unknown)
         {
-            ImGui.TextColored(Muted, "-");
+            ImGui.TextColored(UiTheme.Muted, "-");
             return;
         }
 
         double rate = option.Risk.DealInRate;
         var colour = rate switch
         {
-            <= 0.001 => Good,
-            < 0.06 => Warn,
-            _ => Bad,
+            <= 0.001 => UiTheme.Good,
+            < 0.06 => UiTheme.Warn,
+            _ => UiTheme.Bad,
         };
 
         ImGui.TextColored(colour, rate <= 0.001 ? "safe" : $"{rate * 100:0.#}%");
@@ -390,11 +417,71 @@ public sealed class AdvisorWindow : Window
             ImGui.SetTooltip(option.Risk.Explain());
     }
 
-    private static string ShapeLabel(int shanten) => shanten switch
+    private void DrawFooter(BoardRead read)
     {
-        < 0 => "win",
-        0 => "tenpai",
-        1 => "1-shanten",
-        _ => $"{shanten}-shanten",
-    };
+        ImGui.Separator();
+
+        bool auto = plugin.Configuration.AutoPlay;
+        ImGui.TextColored(auto ? UiTheme.Warn : UiTheme.Muted,
+            auto
+                ? $"AUTO-PLAY ON - {plugin.AutoPlay.Stats.LastAction}"
+                : "Manual play - suggestions only");
+
+        if (auto)
+            UiTheme.WrappedColored("Casual tables only. The Stop button or /mjadv stop returns to manual play.", UiTheme.Muted);
+
+        var table = read.Table!;
+        if (!table.Observations.HasFlag(Observed.OpponentMelds))
+            ImGui.TextColored(UiTheme.Muted, "Meld count not read - readiness may be underestimated.");
+        if (!read.HandSlotsValid)
+            ImGui.TextColored(UiTheme.Muted, "Hand slot order not read - auto-play will not discard until it matches.");
+
+        ImGui.TextColored(UiTheme.Muted, $"Build {GameLogger.BuildStamp}");
+    }
+
+    private void DrawNoTable(BoardRead? read)
+    {
+        ImGui.TextColored(UiTheme.Accent, "MAHJONG ADVISOR");
+        ImGui.Spacing();
+        UiTheme.Wrapped(read?.Status ?? "Waiting for a Doman Mahjong table.");
+        ImGui.Spacing();
+        if (ImGui.Button("Open control panel"))
+            plugin.OpenSettings();
+    }
+
+    private void DrawWaiting(BoardRead read)
+    {
+        int total = Tiles.Total(read.Table!.Hand);
+        string message = total % 3 == 1
+            ? "Waiting for your draw..."
+            : "Reading the board...";
+        ImGui.TextColored(UiTheme.Muted, message);
+        ImGui.Spacing();
+        DrawHandStrip(read, -1);
+    }
+
+    private static string StateLabel(BoardRead read)
+    {
+        var codes = read.Profile?.StateCodes;
+        if (codes is null)
+            return $"state {read.StateCode}";
+
+        int state = read.StateCode;
+        if (state == codes.HandResult)
+            return "result";
+        if (state == codes.EndOfHand)
+            return "end of hand";
+        if (state == codes.CallPrompt)
+            return "call prompt";
+        if (state == codes.ChiVariantSelect)
+            return "choose chi shape";
+        if (state == codes.SelfDeclareList
+            || state == codes.OurTurnDiscard
+            || state == codes.CallPromptList)
+        {
+            return "your turn";
+        }
+
+        return $"state {state}";
+    }
 }

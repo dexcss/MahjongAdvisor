@@ -1,9 +1,9 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
 
   <PropertyGroup>
-    <Version>0.2.0.2</Version>
-    <Authors>dexcss</Authors>
-    <Description>Reads your Doman Mahjong hand and recommends a discard, ranked by hand speed against deal-in risk.</Description>
+    <Version>0.3.0.0</Version>
+    <Authors>Akari</Authors>
+    <Description>Doman Mahjong discard and call advisor with an optional auto-play mode.</Description>
     <AssemblyName>Mahjong.Advisor.Plugin</AssemblyName>
     <RootNamespace>MahjongAdvisor</RootNamespace>
     <Nullable>enable</Nullable>

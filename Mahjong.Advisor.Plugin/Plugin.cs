@@ -4,6 +4,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using MahjongAdvisor.Automation;
 using MahjongAdvisor.Logging;
 using MahjongAdvisor.Reading;
 using MahjongAdvisor.UI;
@@ -37,6 +38,8 @@ public sealed class Plugin : IDalamudPlugin
     public CallPromptReader PromptReader { get; } = new();
 
     public GameLogger GameLogger { get; }
+
+    public AutoPlayController AutoPlay { get; }
 
     public AdvisorWindow AdvisorWindow { get; }
 
@@ -92,6 +95,8 @@ public sealed class Plugin : IDalamudPlugin
         if (Configuration.LogGames)
             GameLogger.StartNewGame();
 
+        AutoPlay = new AutoPlayController(this);
+
         AdvisorWindow = new AdvisorWindow(this);
         DebugWindow = new DebugWindow(this);
         windowSystem.AddWindow(AdvisorWindow);
@@ -102,12 +107,12 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "/mjadv - show the overlay. Also: hide, toggle, setup, nodes, melds, log, geometry, snap.",
+            HelpMessage = "/mjadv - show the overlay. Also: hide, toggle, setup, auto [on|off], stop, nodes, melds, hand, options, log, geometry, snap.",
         });
 
         PluginInterface.UiBuilder.Draw += windowSystem.Draw;
-        PluginInterface.UiBuilder.OpenConfigUi += OpenSetup;
-        PluginInterface.UiBuilder.OpenMainUi += ToggleOverlay;
+        PluginInterface.UiBuilder.OpenConfigUi += OpenSettings;
+        PluginInterface.UiBuilder.OpenMainUi += OpenMainInterface;
         Framework.Update += OnFrameworkUpdate;
 
         Log.Information($"Mahjong Advisor loaded with {profiles.Count} layout profile(s).");
@@ -141,6 +146,7 @@ public sealed class Plugin : IDalamudPlugin
                 LastPrompt = CallPrompt.None;
                 if (read.Profile is null)
                     Reader.ResetAutoMap();
+                AutoPlay.Tick(read, CallPrompt.None, null, null);
                 return;
             }
 
@@ -156,6 +162,7 @@ public sealed class Plugin : IDalamudPlugin
                 LastCallAdvice = BuildCallAdvice(read, LastPrompt);
                 GameLogger.Record(read, null, LastPrompt, LastCallAdvice, PondDiagnostic(), Reader.RotatedPerSeat, Reader.DiscardCountBytes, [.. Reader.UnknownPondTextures],
                 [.. Reader.NewlyVisible.Select(n => $"{n.NodeId}@{n.X:0},{n.Y:0}:{n.TextureId}")]);
+                AutoPlay.Tick(read, LastPrompt, null, LastCallAdvice);
                 return;
             }
 
@@ -167,6 +174,7 @@ public sealed class Plugin : IDalamudPlugin
             LastAdvice = Configuration.Advisor.Recommend(read.Table);
             GameLogger.Record(read, LastAdvice, LastPrompt, LastCallAdvice, PondDiagnostic(), Reader.RotatedPerSeat, Reader.DiscardCountBytes, [.. Reader.UnknownPondTextures],
                 [.. Reader.NewlyVisible.Select(n => $"{n.NodeId}@{n.X:0},{n.Y:0}:{n.TextureId}")]);
+            AutoPlay.Tick(read, LastPrompt, LastAdvice, LastCallAdvice);
             readFailureLogged = false;
         }
         catch (Exception ex)
@@ -175,6 +183,7 @@ public sealed class Plugin : IDalamudPlugin
             LastCallAdvice = null;
             LastPrompt = CallPrompt.None;
             LastRead = BoardRead.Failed($"Read failed: {ex.Message}");
+            AutoPlay.Tick(LastRead, CallPrompt.None, null, null);
 
             // The tick fires several times a second; log the streak once.
             if (!readFailureLogged)
@@ -259,7 +268,7 @@ public sealed class Plugin : IDalamudPlugin
     /// Dumps every visible node with its position. Run this right after a riichi
     /// appears on screen and the declaration marker will be in the file.
     /// </summary>
-    private unsafe void DumpVisibleNodes()
+    public unsafe void DumpVisibleNodes()
     {
         var unit = Reader.TryGetAddon(out var profile);
         if (unit is null || profile is null)
@@ -333,7 +342,7 @@ public sealed class Plugin : IDalamudPlugin
     /// The threat model's strongest input is the called-set count, so this is the
     /// first thing to check if readiness looks too low.
     /// </summary>
-    private void DumpMelds()
+    public void DumpMelds()
     {
         var read = LastRead;
         if (read?.Table is null)
@@ -366,6 +375,44 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
+    /// <summary>Logs the display-slot order the discard callback addresses.</summary>
+    public unsafe void DumpHandSlots()
+    {
+        var unit = Reader.TryGetAddon(out var profile);
+        if (unit is null || profile is null)
+        {
+            Log.Information("[MahjongAdvisor] No mahjong table open.");
+            return;
+        }
+
+        int textureBase = LastRead?.TextureBase ?? profile.TileTextureBase;
+        var slots = new HandSlotReader().Read(unit, profile, textureBase);
+
+        Log.Information($"[MahjongAdvisor] Hand slots: {slots.Count} visible (texture base {textureBase})");
+        foreach (var slot in slots)
+        {
+            Log.Information(
+                $"  slot {slot.Slot,2}: {Tiles.Name(slot.Tile),3} icon {slot.IconId}"
+                + (slot.IsRed ? " (red five)" : ""));
+        }
+    }
+
+    /// <summary>Logs the current popup buttons and their [11, n] indices.</summary>
+    private unsafe void DumpPromptOptions()
+    {
+        var unit = Reader.TryGetAddon(out var profile);
+        if (unit is null || profile is null)
+        {
+            Log.Information("[MahjongAdvisor] No mahjong table open.");
+            return;
+        }
+
+        var options = CallPromptReader.ReadOptions(unit, profile.StateCodes);
+        Log.Information($"[MahjongAdvisor] Popup options: {options.Count}");
+        foreach (var option in options)
+            Log.Information($"  [11,{option.Option}] '{option.Label}'");
+    }
+
     private unsafe CallPrompt ReadPrompt(BoardRead read)
     {
         if (read.Profile is null)
@@ -388,8 +435,12 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
-        string arg = args.Trim().ToLowerInvariant();
-        switch (arg)
+        string[] parts = args.Trim().ToLowerInvariant()
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        string verb = parts.Length > 0 ? parts[0] : "";
+        string sub = parts.Length > 1 ? parts[1] : "";
+
+        switch (verb)
         {
             case "":
             case "show":
@@ -403,7 +454,13 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "setup":
             case "config":
-                OpenSetup();
+                OpenSettings();
+                break;
+            case "auto":
+                SetAutoPlay(sub);
+                break;
+            case "stop":
+                SetAutoPlay("off");
                 break;
             case "log":
                 Configuration.LogGames = !Configuration.LogGames;
@@ -423,17 +480,42 @@ public sealed class Plugin : IDalamudPlugin
                 DumpVisibleNodes();
                 break;
             case "nodes":
-                DebugWindow.IsOpen = true;
+                DebugWindow.Open(SetupTab.Setup);
                 break;
             case "melds":
                 DumpMelds();
                 break;
+            case "hand":
+                DumpHandSlots();
+                break;
+            case "options":
+                DumpPromptOptions();
+                break;
             default:
                 Log.Information(
-                    $"Unknown argument '{arg}'. Use: /mjadv, /mjadv hide, /mjadv toggle, /mjadv setup, "
-                    + "/mjadv nodes, /mjadv melds, /mjadv log, /mjadv geometry, /mjadv snap.");
+                    $"Unknown argument '{verb}'. Use: /mjadv, /mjadv hide, /mjadv toggle, /mjadv setup, "
+                    + "/mjadv auto [on|off], /mjadv stop, /mjadv nodes, /mjadv melds, /mjadv hand, "
+                    + "/mjadv options, /mjadv log, /mjadv geometry, /mjadv snap.");
                 break;
         }
+    }
+
+    /// <summary>Turns autonomous play on/off. Off is the manual suggestion mode.</summary>
+    public void SetAutoPlay(string mode)
+    {
+        bool enable = mode switch
+        {
+            "on" => true,
+            "off" => false,
+            _ => !Configuration.AutoPlay,
+        };
+
+        Configuration.AutoPlay = enable;
+        SaveConfiguration();
+
+        Log.Information(enable
+            ? "Auto-play ON (casual tables only). It will send real discards and calls."
+            : "Auto-play OFF. Suggestions only; no inputs are sent.");
     }
 
     public void ShowOverlay()
@@ -459,10 +541,25 @@ public sealed class Plugin : IDalamudPlugin
             ShowOverlay();
     }
 
-    private void OpenSetup()
+    /// <summary>
+    /// The installer's "Open" button. Always brings up the control panel and
+    /// shows the overlay; at a table both appear, outside one the panel is still
+    /// visible instead of the button looking dead.
+    /// </summary>
+    public void OpenMainInterface()
     {
-        DebugWindow.IsOpen = true;
+        ShowOverlay();
+        DebugWindow.Open(SetupTab.Advisor);
     }
+
+    /// <summary>The installer's "Settings" button / /mjadv setup.</summary>
+    public void OpenSettings()
+    {
+        DebugWindow.Open(SetupTab.Settings);
+    }
+
+    /// <summary>Backwards-compatible alias used by older commands.</summary>
+    public void OpenSetup() => OpenSettings();
 
     public void SaveConfiguration() => PluginInterface.SavePluginConfig(Configuration);
 
@@ -490,8 +587,8 @@ public sealed class Plugin : IDalamudPlugin
 
         Framework.Update -= OnFrameworkUpdate;
         PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
-        PluginInterface.UiBuilder.OpenConfigUi -= OpenSetup;
-        PluginInterface.UiBuilder.OpenMainUi -= ToggleOverlay;
+        PluginInterface.UiBuilder.OpenConfigUi -= OpenSettings;
+        PluginInterface.UiBuilder.OpenMainUi -= OpenMainInterface;
         CommandManager.RemoveHandler(CommandName);
         windowSystem.RemoveAllWindows();
         GameLogger.Dispose();

@@ -94,6 +94,54 @@ public sealed unsafe class NodeInspector
         ReadTileContainers(unit, [nodeId], textureBase);
 
     /// <summary>
+    /// The hand in the client's display-slot order. Slot 0-12 are the closed
+    /// hand, 13 is the drawn tile. This is the only order the discard callback
+    /// understands; the memory hand array is not guaranteed to match it.
+    ///
+    /// Uses the cached tile scan, so this costs no extra tree walk inside a read.
+    /// </summary>
+    public List<HandSlot> ReadHandSlots(AtkUnitBase* unit, LayoutProfile profile, int textureBase)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        var slots = new List<HandSlot>(14);
+        if (unit is null || !profile.HasHandSlots)
+            return slots;
+
+        var hits = ScanTiles(unit, textureBase);
+        for (int slot = 0; slot < 13; slot++)
+            AddHandSlot(slots, hits, slot, profile.HandSlotNodeIds[slot], textureBase);
+
+        AddHandSlot(slots, hits, 13, profile.DrawnTileNodeId, textureBase);
+        return slots;
+    }
+
+    private static void AddHandSlot(
+        List<HandSlot> slots,
+        List<TileHit> hits,
+        int slot,
+        int nodeId,
+        int textureBase)
+    {
+        if (nodeId <= 0)
+            return;
+
+        uint wanted = (uint)nodeId;
+        foreach (var hit in hits)
+        {
+            if (Array.IndexOf(hit.Ancestry, wanted) < 0)
+                continue;
+
+            var decoded = TileDecoder.Decode(hit.Texture, textureBase);
+            if (!decoded.IsValid)
+                continue;
+
+            slots.Add(new HandSlot(slot, decoded.Tile, hit.Texture, decoded.IsRed));
+            return;
+        }
+    }
+
+    /// <summary>
     /// Every tile under any of <paramref name="nodeIds"/>, ordered by screen
     /// position. Null when none of the containers is on screen, so the caller can
     /// mark the field unobserved instead of reading "not found" as "empty".
@@ -762,7 +810,72 @@ public sealed unsafe class NodeInspector
         }
     }
 
-    private static int TryGetTextureId(AtkResNode* node)
+    /// <summary>
+    /// Finds a node by id. The addon's own lookup is O(1) and covers the hand
+    /// tile nodes; the recursive fallback reaches component-internal nodes when
+    /// that lookup cannot see them.
+    /// </summary>
+    public static AtkResNode* FindNode(AtkUnitBase* unit, uint nodeId)
+    {
+        if (unit is null || nodeId == 0)
+            return null;
+
+        var direct = unit->GetNodeById(nodeId);
+        if (direct is not null)
+            return direct;
+
+        var uld = unit->UldManager;
+        if (uld.NodeList is null)
+            return null;
+
+        for (int i = 0; i < uld.NodeListCount; i++)
+        {
+            var found = FindNodeFrom(uld.NodeList[i], nodeId, 0);
+            if (found is not null)
+                return found;
+        }
+
+        return null;
+    }
+
+    private static AtkResNode* FindNodeFrom(AtkResNode* node, uint nodeId, int depth)
+    {
+        if (node is null || depth > MaxDepth)
+            return null;
+        if (node->NodeId == nodeId)
+            return node;
+
+        if ((int)node->Type >= 1000)
+        {
+            var component = ((AtkComponentNode*)node)->Component;
+            if (component is not null)
+            {
+                var sub = component->UldManager;
+                if (sub.NodeList is not null)
+                {
+                    for (int i = 0; i < sub.NodeListCount; i++)
+                    {
+                        var found = FindNodeFrom(sub.NodeList[i], nodeId, depth + 1);
+                        if (found is not null)
+                            return found;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        for (var child = node->ChildNode; child is not null; child = child->PrevSiblingNode)
+        {
+            var found = FindNodeFrom(child, nodeId, depth + 1);
+            if (found is not null)
+                return found;
+        }
+
+        return null;
+    }
+
+    internal static int TryGetTextureId(AtkResNode* node)
     {
         if (node is null || node->Type != NodeType.Image)
             return 0;

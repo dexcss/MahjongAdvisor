@@ -13,14 +13,23 @@ public sealed record BoardRead(
     int RejectedTiles)
 {
     /// <summary>
-    /// The hand in addon slot order, which is the order the client draws it
-    /// left to right. Lets the overlay say "3rd from the left" instead of
+    /// The hand in display order, when the slot nodes are readable; falls back
+    /// to the memory array order. Lets the overlay say "slot 7 of 14" instead of
     /// making you decode tile notation.
     /// </summary>
     public IReadOnlyList<int> HandOrder { get; init; } = [];
 
+    /// <summary>The hand in client display-slot order (0-12 hand, 13 drawn).</summary>
+    public IReadOnlyList<HandSlot> HandSlots { get; init; } = [];
+
+    /// <summary>True when <see cref="HandSlots"/> is exactly the hand counts.</summary>
+    public bool HandSlotsValid { get; init; }
+
     /// <summary>True when the client's tile texture ids shifted and were retuned.</summary>
     public bool TextureBaseShifted { get; init; }
+
+    /// <summary>The resolved tile texture base used for this read.</summary>
+    public int TextureBase { get; init; } = 76041;
 
     public bool Ok => Table is not null;
 
@@ -170,17 +179,32 @@ public sealed unsafe class EmjBoardReader
 
         var (decoded, rejected) = TileDecoder.DecodeMany(raw, textureBase);
         if (decoded.Count == 0)
-            return BoardRead.Failed("Hand array empty - table is probably still dealing.", profile);
+        {
+            // Keep the state code: auto-play can still advance a result screen
+            // even when the hand array has already been torn down.
+            return new BoardRead(
+                null, profile, "Hand array empty - table is probably still dealing.",
+                stateCode, 0);
+        }
 
         int calledMelds = InferCalledMelds(decoded.Count);
         if (calledMelds < 0)
         {
-            return BoardRead.Failed(
+            return new BoardRead(
+                null,
+                profile,
                 $"Hand has {decoded.Count} tiles, which is not a legal shape. Mid-transition; skipping.",
-                profile);
+                stateCode,
+                0);
         }
 
         var handCounts = TileDecoder.ToCounts(decoded);
+
+        // Display-slot order is required by the discard callback. Read it from
+        // the same cached node scan and validate it against the hand array; a
+        // mismatch must never become an automated discard.
+        var handSlots = inspector.ReadHandSlots(unit, profile, textureBase);
+        bool handSlotsValid = HandSlotsMatch(handSlots, handCounts);
 
         var seats = new SeatView[4];
         for (int i = 0; i < 4; i++)
@@ -610,8 +634,13 @@ public sealed unsafe class EmjBoardReader
 
         return new BoardRead(table, profile, "ok", stateCode, rejected)
         {
-            HandOrder = [.. decoded.Select(d => d.Tile)],
+            HandOrder = handSlotsValid
+                ? [.. handSlots.Where(s => s.IsValid).Select(s => s.Tile)]
+                : [.. decoded.Select(d => d.Tile)],
+            HandSlots = handSlots,
+            HandSlotsValid = handSlotsValid,
             TextureBaseShifted = shifted,
+            TextureBase = textureBase,
         };
     }
 
@@ -751,6 +780,33 @@ public sealed unsafe class EmjBoardReader
             LastDiscardTile = -1;
             LastDiscardSeat = -1;
         }
+    }
+
+    /// <summary>
+    /// The display slots are only trustworthy when their tile multiset equals
+    /// the memory hand array. A stale node id or a missed drawn tile fails here
+    /// instead of producing a callback for a tile the player does not hold.
+    /// </summary>
+    private static bool HandSlotsMatch(IReadOnlyList<HandSlot> slots, int[] hand)
+    {
+        if (slots.Count != Tiles.Total(hand))
+            return false;
+
+        var counts = new int[Tiles.Kinds];
+        foreach (var slot in slots)
+        {
+            if (!slot.IsValid)
+                return false;
+            counts[slot.Tile]++;
+        }
+
+        for (int t = 0; t < Tiles.Kinds; t++)
+        {
+            if (counts[t] != hand[t])
+                return false;
+        }
+
+        return true;
     }
 
     /// <summary>

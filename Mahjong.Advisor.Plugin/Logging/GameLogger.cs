@@ -13,7 +13,7 @@ public sealed class LogRecord
 
     /// <summary>Plugin build, so a log can be matched to the code that produced it.</summary>
     public string Build { get; set; } = "";
-    public string Kind { get; set; } = "";       // "discard" | "call" | "prompt-unmatched"
+    public string Kind { get; set; } = "";       // "discard" | "call" | "prompt-unmatched" | "auto"
     public int StateCode { get; set; }
     public string Hand { get; set; } = "";
     public int CalledMelds { get; set; }
@@ -49,7 +49,7 @@ public sealed class LogRecord
     /// <summary>Our hand is frozen by our own riichi.</summary>
     public bool SelfRiichi { get; set; }
 
-    /// <summary>Hand in raw slot order, which is not the same as sorted display order.</summary>
+    /// <summary>Hand in client display-slot order when the slot reader is valid.</summary>
     public string HandOrder { get; set; } = "";
 
     /// <summary>The tile identified as just drawn.</summary>
@@ -131,7 +131,7 @@ public sealed class GameLogger : IDisposable
     private readonly object gate = new();
 
     /// <summary>Bumped whenever behaviour changes, so logs are attributable.</summary>
-    public const string BuildStamp = "2026-10-17.3";
+    public const string BuildStamp = "2026-10-18.1";
 
     private string? currentPath;
     private string lastFingerprint = "";
@@ -280,6 +280,26 @@ public sealed class GameLogger : IDisposable
         }
 
         Append(record);
+    }
+
+    /// <summary>
+    /// Appends a trace line for an input the auto-play controller actually sent.
+    /// Kept separate from the decision record so a hand can be replayed against
+    /// exactly what the plugin clicked.
+    /// </summary>
+    public void RecordAutoAction(string action, string detail)
+    {
+        if (!Enabled)
+            return;
+
+        Append(new LogRecord
+        {
+            Time = DateTime.UtcNow.ToString("O"),
+            Build = BuildStamp,
+            Kind = "auto",
+            Headline = action,
+            PlayerAction = detail,
+        });
     }
 
     /// <summary>Works out which tile left the hand between the two positions.</summary>

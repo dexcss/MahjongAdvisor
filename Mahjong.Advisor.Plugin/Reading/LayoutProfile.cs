@@ -64,7 +64,26 @@ public sealed class LayoutProfile
     /// </summary>
     public int[] RiichiMarkerNodeIds { get; set; } = [];
 
+    /// <summary>
+    /// Closed-hand tile component nodes, left to right (0-12). Slot 13 is the
+    /// freshly drawn tile at <see cref="DrawnTileNodeId"/>. Needed for the
+    /// discard callback, which addresses the tile by display slot, not by the
+    /// memory hand array's slot order.
+    /// </summary>
+    public int[] HandSlotNodeIds { get; set; } =
+        [134, 1340001, 1340002, 1340003, 1340004, 1340005, 1340006, 1340007, 1340008, 1340009, 1340010, 1340011, 1340012];
+
+    public int DrawnTileNodeId { get; set; } = 135;
+
+    /// <summary>Within a hand-tile component: the button child, then its image child.</summary>
+    public int HandButtonNodeListIndex { get; set; }
+
+    public int HandImageNodeListIndex { get; set; } = 4;
+
     public bool HasPondNodes => PondContainerNodeIds.Length == 4;
+
+    public bool HasHandSlots =>
+        HandSlotNodeIds.Length == 13 && DrawnTileNodeId > 0;
 
     public bool HasMeldNodes =>
         Enumerable.Range(0, 4).All(seat => MeldNodeIdsForSeat(seat).Count > 0);
@@ -111,10 +130,23 @@ public sealed class LayoutStateCodes
     public int OurTurnDiscard { get; set; } = 30;
     public int SelfDeclareList { get; set; } = 6;
     public int CallPrompt { get; set; } = 15;
+    /// <summary>
+    /// Post-call discard surface (28 on this client). The name is historical:
+    /// the reference's live captures confirm the call popup itself is 15.
+    /// </summary>
     public int CallPromptList { get; set; } = 28;
+
     public int ChiVariantSelect { get; set; } = 25;
     public int HandResult { get; set; } = 29;
+    public int EndOfHand { get; set; } = 32;
+    public int NewHand { get; set; } = 2;
     public int PostDrawIdle { get; set; } = 5;
+
+    /// <summary>
+    /// First AtkValue slot of the consecutive string run holding call/self-action
+    /// button labels. A button's fire value is its position in that run.
+    /// </summary>
+    public int ActionButtonBaseIndex { get; set; } = 7;
 
     /// <summary>Index into AtkValues holding the state code.</summary>
     public int StateCodeValueIndex { get; set; }

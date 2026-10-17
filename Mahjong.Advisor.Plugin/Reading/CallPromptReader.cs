@@ -4,27 +4,32 @@ using ValueType = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType;
 
 namespace MahjongAdvisor.Reading;
 
+/// <summary>One clickable popup button: its label and the option number `[11, n]` fires.</summary>
+public readonly record struct ActionOption(string Label, int Option);
+
 public sealed record CallPrompt(
     int StateCode,
     IReadOnlyList<CallKind> Available,
     int ClaimedTile,
+    IReadOnlyList<ActionOption> Options,
     IReadOnlyList<string> RawLabels,
     IReadOnlyList<int> RawClaimCandidates)
 {
     public bool HasClaimedTile => ClaimedTile is >= 0 and < Tiles.Kinds;
 
     public static readonly CallPrompt None =
-        new(-1, [], -1, [], []);
+        new(-1, [], -1, [], [], []);
 }
 
 /// <summary>
 /// Works out whether a call prompt is up, which options it offers, and which
 /// tile is being claimed.
 ///
-/// Everything here is read-only. The button labels and AtkValue slots come from
-/// the shipped solver's verified layout, but this code has NOT been confirmed
-/// against a live prompt — the game log records the raw values so the mapping
-/// can be checked against real captures before anything relies on it.
+/// Everything here is read-only. The consecutive button-label run and its
+/// `[11, position]` fire values were verified live by the reference solver; the
+/// claim-band AtkValues are kept only for diagnostics because this client put
+/// the tail of our own hand in them. Auto-play never fires without a readable
+/// option list.
 /// </summary>
 public sealed unsafe class CallPromptReader
 {
@@ -45,9 +50,13 @@ public sealed unsafe class CallPromptReader
             return CallPrompt.None;
 
         var codes = profile.StateCodes;
+
+        // 15 is the call prompt; 6 and 30 are the self-action/discard surfaces
+        // (30 carries a Riichi/Pass prompt when one is offered). 28 is the
+        // post-call discard surface, not a prompt, despite the old name.
         bool isPrompt = stateCode == codes.CallPrompt
-            || stateCode == codes.CallPromptList
-            || stateCode == codes.SelfDeclareList;
+            || stateCode == codes.SelfDeclareList
+            || stateCode == codes.OurTurnDiscard;
 
         if (!isPrompt)
             return CallPrompt.None;
@@ -55,7 +64,11 @@ public sealed unsafe class CallPromptReader
         if (unit->AtkValues is null || unit->AtkValuesCount == 0)
             return CallPrompt.None;
 
-        var labels = ScanLabels(unit, codes.ButtonLabelScanLimit);
+        // The button labels live in one consecutive string run. Do not fall back
+        // to scanning unrelated AtkValues: a player name containing "chi" or
+        // "kan" is not a call prompt, and auto-play must never fire on it.
+        var options = ReadOptions(unit, codes);
+        var labels = options.Select(o => o.Label).ToList();
         var available = MatchLabels(labels, profile.CallLabels);
 
         // The AtkValue claim band is still captured for the log, but it is NOT a
@@ -93,30 +106,92 @@ public sealed unsafe class CallPromptReader
 
         int claimed = ChooseLegalClaim(candidateTiles, available, handCounts);
 
-        return new CallPrompt(stateCode, available, claimed, labels, candidates);
+        return new CallPrompt(stateCode, available, claimed, options, labels, candidates);
     }
 
-    private static List<string> ScanLabels(AtkUnitBase* unit, int scanLimit)
+    /// <summary>
+    /// Reads the consecutive string run that holds popup button labels. The
+    /// fire value is the button's position in that run, not its AtkValue index.
+    /// Returning no options is safer than inventing indices; auto-play waits.
+    /// </summary>
+    public static List<ActionOption> ReadOptions(AtkUnitBase* unit, LayoutStateCodes codes)
     {
-        var labels = new List<string>();
-        int end = Math.Min((int)unit->AtkValuesCount, Math.Max(1, scanLimit));
+        var options = new List<ActionOption>(6);
+        if (unit is null || unit->AtkValues is null || unit->AtkValuesCount == 0)
+            return options;
 
-        for (int i = 0; i < end; i++)
+        int start = Math.Max(0, codes.ActionButtonBaseIndex);
+        int end = Math.Min((int)unit->AtkValuesCount, start + Math.Max(1, codes.ButtonLabelScanLimit));
+
+        for (int i = start; i < end; i++)
         {
             var value = unit->AtkValues[i];
             if (value.Type is not (ValueType.String or ValueType.ConstString or ValueType.ManagedString))
-                continue;
+                break;
             if (value.String.Value is null)
-                continue;
+                break;
 
-            // CStringPointer.ToString() is the supported read; ExtractText does
-            // not exist on it, and String8 was renamed to ConstString.
-            string text = value.String.ToString();
-            if (!string.IsNullOrWhiteSpace(text))
-                labels.Add(text.Trim());
+            string text = value.String.ToString().Trim();
+            if (text.Length == 0)
+                break;
+
+            options.Add(new ActionOption(text, i - start));
         }
 
-        return labels;
+        return options;
+    }
+
+    /// <summary>
+    /// Option number for a semantic call kind, or -1 when the popup does not
+    /// offer it. Uses the same label table as advice matching.
+    /// </summary>
+    public static int FindOption(
+        IReadOnlyList<ActionOption> options, CallKind kind, LayoutCallLabels map)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(map);
+
+        string[] candidates = kind switch
+        {
+            CallKind.Ron => map.Ron,
+            CallKind.Tsumo => map.Tsumo,
+            CallKind.Riichi => map.Riichi,
+            CallKind.Kan => map.Kan,
+            CallKind.Pon => map.Pon,
+            CallKind.Chi => map.Chi,
+            CallKind.Pass => map.Pass,
+            _ => [],
+        };
+
+        foreach (var option in options)
+        {
+            foreach (string candidate in candidates)
+            {
+                if (option.Label.Contains(candidate, StringComparison.OrdinalIgnoreCase))
+                    return option.Option;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>First option whose label contains any of the supplied words.</summary>
+    public static int FindOptionContaining(
+        IReadOnlyList<ActionOption> options, params string[] words)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(words);
+
+        foreach (var option in options)
+        {
+            foreach (string word in words)
+            {
+                if (option.Label.Contains(word, StringComparison.OrdinalIgnoreCase))
+                    return option.Option;
+            }
+        }
+
+        return -1;
     }
 
     private static List<CallKind> MatchLabels(List<string> labels, LayoutCallLabels map)

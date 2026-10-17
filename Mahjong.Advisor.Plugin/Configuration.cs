@@ -20,6 +20,31 @@ public sealed class Configuration : IPluginConfiguration
 
     public bool ShowAcceptedTiles { get; set; } = true;
 
+    // --- auto-play ------------------------------------------------------
+    // Off by default. Auto-play sends real addon callbacks, so the manual
+    // suggestion mode is always one checkbox away.
+    public bool AutoPlay { get; set; }
+
+    /// <summary>Pon is the only call auto-play takes by default: it is a clean,
+    /// verified `[11, option]` press and our CallAdvisor already weighs the yaku.</summary>
+    public bool AutoPlayAllowPon { get; set; } = true;
+
+    /// <summary>Chi requires the variant-selection surface, which is not verified.</summary>
+    public bool AutoPlayAllowChi { get; set; }
+
+    /// <summary>A kan flips another dora indicator for every seat; opt in only.</summary>
+    public bool AutoPlayAllowKan { get; set; }
+
+    public bool AutoPlayAdvanceResults { get; set; } = true;
+
+    // Humanized timing. The reference's live run used the same ranges.
+    public int AutoPlayTurnDelayMinMs { get; set; } = 700;
+    public int AutoPlayTurnDelayMaxMs { get; set; } = 1800;
+    public int AutoPlayCallDelayMinMs { get; set; } = 500;
+    public int AutoPlayCallDelayMaxMs { get; set; } = 1200;
+    public int AutoPlayResultDelayMinMs { get; set; } = 1500;
+    public int AutoPlayResultDelayMaxMs { get; set; } = 2800;
+
     /// <summary>
     /// Reopen the setup window on launch. Off by default: it is a diagnostics
     /// window, and opening it every session because it was used once is a
@@ -62,6 +87,24 @@ public sealed class Configuration : IPluginConfiguration
     {
         bool changed = false;
 
+        var turnDelay = NormalizeDelay(
+            AutoPlayTurnDelayMinMs, AutoPlayTurnDelayMaxMs, 700, 1800);
+        AutoPlayTurnDelayMinMs = turnDelay.Min;
+        AutoPlayTurnDelayMaxMs = turnDelay.Max;
+        changed |= turnDelay.Changed;
+
+        var callDelay = NormalizeDelay(
+            AutoPlayCallDelayMinMs, AutoPlayCallDelayMaxMs, 500, 1200);
+        AutoPlayCallDelayMinMs = callDelay.Min;
+        AutoPlayCallDelayMaxMs = callDelay.Max;
+        changed |= callDelay.Changed;
+
+        var resultDelay = NormalizeDelay(
+            AutoPlayResultDelayMinMs, AutoPlayResultDelayMaxMs, 1500, 2800);
+        AutoPlayResultDelayMinMs = resultDelay.Min;
+        AutoPlayResultDelayMaxMs = resultDelay.Max;
+        changed |= resultDelay.Changed;
+
         if (AlternativesShown is < 0 or > 10)
         {
             AlternativesShown = 3;
@@ -94,6 +137,32 @@ public sealed class Configuration : IPluginConfiguration
 
         if (changed)
             NeedsSaveAfterInitialize = true;
+
+        static (int Min, int Max, bool Changed) NormalizeDelay(
+            int min, int max, int defaultMin, int defaultMax)
+        {
+            bool changed = false;
+
+            if (min is < 0 or > 10_000)
+            {
+                min = defaultMin;
+                changed = true;
+            }
+
+            if (max is < 0 or > 10_000)
+            {
+                max = defaultMax;
+                changed = true;
+            }
+
+            if (max < min)
+            {
+                max = min;
+                changed = true;
+            }
+
+            return (min, max, changed);
+        }
     }
 
     [JsonIgnore]
