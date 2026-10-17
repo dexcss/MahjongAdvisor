@@ -194,7 +194,7 @@ public sealed unsafe class AutoPlayController
         // the prompt so 6 -> 30 and a Riichi option appearing do not reset an
         // in-flight declaration.
         string turnKey = BuildTurnKey(read, state);
-        if (turnKey != lastTurnKey && !sameTurn)
+        if ((state != prevState || turnKey != lastTurnKey) && !sameTurn)
         {
             lastTurnKey = turnKey;
             acted = false;
@@ -329,8 +329,7 @@ public sealed unsafe class AutoPlayController
             // Wait until the declaration prompt has actually closed. Firing the
             // discard while Riichi/Pass is still on screen can be swallowed or
             // treated as another prompt choice.
-            if (callAdvice?.Best?.Kind == CallKind.Riichi
-                && prompt.Available.Contains(CallKind.Riichi))
+            if (prompt.Available.Contains(CallKind.Riichi))
             {
                 actAt = Environment.TickCount64 + 200;
                 return;

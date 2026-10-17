@@ -6,7 +6,7 @@ discard by hand speed against deal-in risk. Manual suggestion mode is the
 default. An optional auto-play mode can send the same inputs for you on casual
 tables.
 
-**0.3.0.0** is the current public build. The engine and most of the reader were
+**0.3.0.1** is the current public build. The engine and most of the reader were
 played live before this version; the meld mapping, the call-prompt fixes, the
 expected-value model and the new auto-play controller still need a live pass.
 
@@ -225,10 +225,10 @@ Then:
 
 ```powershell
 git add .
-git commit -m "Mahjong Advisor v0.3.0.0"
+git commit -m "Mahjong Advisor v0.3.0.1"
 git push origin main
-git tag v0.3.0.0
-git push origin v0.3.0.0
+git tag v0.3.0.1
+git push origin v0.3.0.1
 ```
 
 CI runs the tests, builds the plugin and publishes `MahjongAdvisor.zip` on the
