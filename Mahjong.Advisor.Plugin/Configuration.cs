@@ -7,7 +7,7 @@ namespace MahjongAdvisor;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = 4;
 
     public bool ShowOverlay { get; set; } = true;
 
@@ -109,6 +109,17 @@ public sealed class Configuration : IPluginConfiguration
             NotenPenaltyValue = 1500;
             OpponentHandValue = 4000;
             Version = 3;
+            changed = true;
+        }
+
+        // v4 re-arms auto-play and logging after a manual stop. This build fixes
+        // the self-kan freeze, so the next launch should be a clean unattended
+        // session unless the user explicitly stops again.
+        if (Version < 4)
+        {
+            AutoPlay = true;
+            LogGames = true;
+            Version = 4;
             changed = true;
         }
 

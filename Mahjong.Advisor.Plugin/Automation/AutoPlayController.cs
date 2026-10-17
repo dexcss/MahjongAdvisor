@@ -112,9 +112,9 @@ public sealed unsafe class AutoPlayController
             if (wasEnabled)
             {
                 wasEnabled = false;
-                ResetSession();
+                ResetSession(resetStats: false);
                 LastStatus = "off";
-                Log("auto-play off");
+                Log("auto-play off (session stats preserved for the diagnostic bundle)");
             }
 
             return;
@@ -857,9 +857,11 @@ public sealed unsafe class AutoPlayController
         plugin.GameLogger.RecordAutoAction(kind.ToString(), label);
     }
 
-    private void ResetSession()
+    private void ResetSession(bool resetStats = true)
     {
-        Stats.Reset();
+        if (resetStats)
+            Stats.Reset();
+
         addonAbsent = true;
         graceUntil = 0;
         nextTickAllowed = 0;

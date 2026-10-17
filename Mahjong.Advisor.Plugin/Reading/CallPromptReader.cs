@@ -77,7 +77,16 @@ public sealed unsafe class CallPromptReader
         // the recent board additions are the reliable sources.
         var (_, candidates) = ScanClaimedTile(unit, profile, codes);
 
-        if (available.Count == 0)
+        // A self-kan bar (Kan / Pass at state 6) is not a blocking prompt. The
+        // client ignores the Pass option here and expects a normal discard to
+        // decline the kan. Treating it as a prompt stalled a live game.
+        bool selfKanBar = stateCode == codes.SelfDeclareList
+            && available.Contains(CallKind.Kan)
+            && !available.Contains(CallKind.Riichi)
+            && !available.Contains(CallKind.Tsumo)
+            && !available.Contains(CallKind.Ron);
+
+        if (selfKanBar || available.Count == 0)
         {
             // Keep the raw button run for diagnostics. State 15 is also the
             // generic "other players are acting" state; seeing what is actually
