@@ -64,6 +64,14 @@ public static class DiagnosticBundle
             foreach (string file in Directory.EnumerateFiles(configDirectory, "*.json"))
                 AddFile(zip, $"config/{Path.GetFileName(file)}", file);
 
+            // Dalamud stores the actual IPluginConfiguration file one level up:
+            // pluginConfigs/<InternalName>.json, not inside the per-plugin data
+            // directory. Include it explicitly.
+            string parentConfigDirectory = Path.GetDirectoryName(configDirectory) ?? configDirectory;
+            string pluginConfigFile = Path.Combine(
+                parentConfigDirectory, Path.GetFileName(configDirectory) + ".json");
+            AddFile(zip, $"config/{Path.GetFileName(pluginConfigFile)}", pluginConfigFile);
+
             string layoutDirectory = Path.Combine(configDirectory, "layouts");
             if (Directory.Exists(layoutDirectory))
             {

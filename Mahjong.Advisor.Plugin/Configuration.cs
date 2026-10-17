@@ -7,7 +7,7 @@ namespace MahjongAdvisor;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
 
     public bool ShowOverlay { get; set; } = true;
 
@@ -96,6 +96,19 @@ public sealed class Configuration : IPluginConfiguration
             AutoPlay = true;
             LogGames = true;
             Version = 2;
+            changed = true;
+        }
+
+        // v3 resets the exposed tuning sliders to the values the engine was
+        // fitted and simulated with. Existing configs had drifted (5200/5800),
+        // which changes the push/fold balance.
+        if (Version < 3)
+        {
+            AverageWinValue = 1300;
+            AverageDealInCost = 5200;
+            NotenPenaltyValue = 1500;
+            OpponentHandValue = 4000;
+            Version = 3;
             changed = true;
         }
 

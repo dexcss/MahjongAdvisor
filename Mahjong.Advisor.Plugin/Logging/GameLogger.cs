@@ -140,7 +140,7 @@ public sealed class GameLogger : IDisposable
     private readonly object gate = new();
 
     /// <summary>Bumped whenever behaviour changes, so logs are attributable.</summary>
-    public const string BuildStamp = "2026-10-18.4";
+    public const string BuildStamp = "2026-10-18.5";
 
     private string? currentPath;
     private string lastFingerprint = "";
