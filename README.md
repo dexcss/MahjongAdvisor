@@ -5,7 +5,7 @@ the dora, the scores and the called melds, then ranks each legal discard by hand
 speed against deal-in risk. It is a suggestion overlay — it never clicks
 anything for you.
 
-**0.2.0.1** is the current public build. The engine and most of the reader were
+**0.2.0.2** is the current public build. The engine and most of the reader were
 played live before this version; the meld mapping, the call-prompt fixes and the
 new expected-value model are the parts that still need a live pass.
 
@@ -137,10 +137,10 @@ Then:
 
 ```powershell
 git add .
-git commit -m "Mahjong Advisor v0.2.0.1"
+git commit -m "Mahjong Advisor v0.2.0.2"
 git push origin main
-git tag v0.2.0.1
-git push origin v0.2.0.1
+git tag v0.2.0.2
+git push origin v0.2.0.2
 ```
 
 CI runs the tests, builds the plugin and publishes `MahjongAdvisor.zip` on the

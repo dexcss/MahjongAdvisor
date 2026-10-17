@@ -508,6 +508,10 @@ public sealed unsafe class EmjBoardReader
         if (reported >= 0 && reported <= profile.Limits.WallInitial && Math.Abs(reported - wall) <= 2)
             wall = reported;
 
+        // Keep the previous value for the next read's new-hand check. Without
+        // this the wall-jump half of that test can never fire.
+        previousWall = wall;
+
         RotatedPerSeat = rotatedCounts;
         DiscardCountBytes = discardCounts;
         NewlyVisible = inspector.TakeNewlyVisible(unit);
