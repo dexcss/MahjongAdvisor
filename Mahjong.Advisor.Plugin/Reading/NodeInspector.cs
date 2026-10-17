@@ -58,8 +58,8 @@ public sealed unsafe class NodeInspector
     // A single read asks the same questions many times: the board census, pond
     // detection, four containers, the riichi markers and the newly-visible diff.
     // Without this cache that is seven full tree walks per read (about six reads
-    // a second), which is a lot of node chasing for data that cannot change
-    // inside one framework tick.
+    // a second). Now the tile scan and the visibility scan are each done once,
+    // because the tree cannot change inside one framework tick.
     private AtkUnitBase* scanUnit;
     private int scanTextureBase;
     private List<TileHit>? scanHits;

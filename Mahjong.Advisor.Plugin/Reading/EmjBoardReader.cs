@@ -217,6 +217,27 @@ public sealed unsafe class EmjBoardReader
             discardCounts[i] = value <= profile.Limits.DiscardCountSanityMax ? value : 0;
         }
 
+        // A fresh hand: forget who was riichi, what we called, and how long the
+        // old ponds were. This has to happen BEFORE TrackNewDiscard, or a new
+        // pond that starts shorter than the previous hand's looks like it never
+        // grew and the first call prompt gets a stale claimed tile.
+        int wallNow = profile.Limits.WallInitial - discardCounts.Sum();
+        bool newHand = discardCounts.Sum() == 0 || (previousWall >= 0 && wallNow > previousWall + 4);
+        if (newHand)
+        {
+            ClearRiichi();
+            for (int i = 0; i < 4; i++)
+                previousPonds[i].Clear();
+            previousCensus = new int[Tiles.Kinds];
+            LastDiscardTile = -1;
+            LastDiscardSeat = -1;
+            RecentBoardAdditions.Clear();
+            ownMeldTiles.Clear();
+            pendingKuikae = [];
+            lastCompleteHand = [];
+            lastCompleteMelds = -1;
+        }
+
         // Work the discard piles out from tile positions when they have not been
         // set by hand. Requires two identical detections in a row before it is
         // trusted, so a half-drawn board cannot lock in a bad mapping.
@@ -425,20 +446,6 @@ public sealed unsafe class EmjBoardReader
                 for (int seat = 0; seat < 4; seat++)
                     seats[seat].MeldTiles = [];
             }
-        }
-
-        // A fresh hand: forget who was in riichi.
-        // Derived from discards, which is steadier than the AtkValue.
-        int wallNow = profile.Limits.WallInitial - discardCounts.Sum();
-        bool newHand = discardCounts.Sum() == 0 || (previousWall >= 0 && wallNow > previousWall + 4);
-        if (newHand)
-        {
-            ClearRiichi();
-            RecentBoardAdditions.Clear();
-            ownMeldTiles.Clear();
-            pendingKuikae = [];
-            lastCompleteHand = [];
-            lastCompleteMelds = -1;
         }
 
         for (int i = 0; i < 4; i++)
