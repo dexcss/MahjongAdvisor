@@ -315,7 +315,17 @@ public sealed unsafe class AutoPlayController
 
         // A complete hand has a tsumo panel; some panels carry no labels, in
         // which case the affirmative button is option 0 (verified live).
-        if (!afterCall && Shanten.Calculate(table.Hand, table.CalledMelds) < 0)
+        // An OPEN complete hand can still be yaku-less, in which case the game
+        // correctly shows no tsumo prompt. Firing the unlabelled option 0 there
+        // was the second live freeze: never treat "complete" as "can win".
+        bool complete = !afterCall
+            && Shanten.Calculate(table.Hand, table.CalledMelds) < 0;
+        bool canWin = complete && HasWinningYaku(table);
+
+        if (complete && !canWin)
+            Log("turn: complete hand has no yaku; continuing to discard instead of tsumo.");
+
+        if (canWin)
         {
             var options = OptionsFor(read, prompt);
             int tsumo = CallPromptReader.FindOption(options, CallKind.Tsumo, profile.CallLabels);
@@ -628,6 +638,27 @@ public sealed unsafe class AutoPlayController
         }
 
         return FireDiscard(slot.Value, $"discard {Tiles.Name(tile)}");
+    }
+
+    /// <summary>
+    /// Whether a complete hand is actually allowed to win. A closed hand always
+    /// has menzen tsumo, so it can trust the game's prompt. An open hand needs a
+    /// real yaku; if the meld tiles are unreadable, fail closed and keep
+    /// discarding rather than firing an option the client will ignore.
+    /// </summary>
+    private static bool HasWinningYaku(TableState table)
+    {
+        if (table.CalledMelds == 0)
+            return true; // menzen tsumo
+
+        if (table.Seats[0].MeldTiles.Count == 0)
+            return false;
+
+        var full = (int[])table.Hand.Clone();
+        foreach (int tile in table.Seats[0].MeldTiles)
+            full[tile]++;
+
+        return CallAdvisor.HasOpenYakuPath(full, 0, CallKind.Pass);
     }
 
     /// <summary>

@@ -31,6 +31,12 @@ public sealed record BoardRead(
     /// <summary>The resolved tile texture base used for this read.</summary>
     public int TextureBase { get; init; } = 76041;
 
+    /// <summary>Newest discard seen by the pond tracker, or -1.</summary>
+    public int LastDiscardTile { get; init; } = -1;
+
+    /// <summary>Seat that made <see cref="LastDiscardTile"/>, or -1.</summary>
+    public int LastDiscardSeat { get; init; } = -1;
+
     public bool Ok => Table is not null;
 
     public static BoardRead Failed(string status, LayoutProfile? profile = null) =>
@@ -641,6 +647,8 @@ public sealed unsafe class EmjBoardReader
             HandSlotsValid = handSlotsValid,
             TextureBaseShifted = shifted,
             TextureBase = textureBase,
+            LastDiscardTile = LastDiscardTile,
+            LastDiscardSeat = LastDiscardSeat,
         };
     }
 

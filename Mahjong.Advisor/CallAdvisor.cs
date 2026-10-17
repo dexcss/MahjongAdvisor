@@ -392,6 +392,53 @@ public sealed class CallAdvisor
         if (suitsPresent <= 1)
             return true;
 
+        // Ittsu: 123 + 456 + 789 in one suit.
+        for (int suit = 0; suit < 3; suit++)
+        {
+            int start = suit * 9;
+            bool all = true;
+            for (int rank = 0; rank < 9; rank++)
+            {
+                if (full[start + rank] < 1)
+                {
+                    all = false;
+                    break;
+                }
+            }
+
+            if (all)
+                return true;
+        }
+
+        // Sanshoku doujun: the same run in all three suits.
+        for (int rank = 0; rank <= 6; rank++)
+        {
+            bool all = true;
+            for (int suit = 0; suit < 3 && all; suit++)
+            {
+                int start = (suit * 9) + rank;
+                if (full[start] < 1 || full[start + 1] < 1 || full[start + 2] < 1)
+                    all = false;
+            }
+
+            if (all)
+                return true;
+        }
+
+        // Honroutou: terminals and honours only.
+        bool onlyTerminals = true;
+        for (int t = 0; t < Tiles.Kinds; t++)
+        {
+            if (full[t] > 0 && !Tiles.IsTerminal(t))
+            {
+                onlyTerminals = false;
+                break;
+            }
+        }
+
+        if (onlyTerminals)
+            return true;
+
         // Toitoi: mostly triplets already.
         int triplets = 0;
         for (int t = 0; t < Tiles.Kinds; t++)

@@ -97,18 +97,11 @@ public sealed unsafe class CallPromptReader
         // Prefer a candidate that is actually legal for what the prompt offers.
         // Pon needs two in hand, chi needs a run partner -- that constraint is far
         // stronger than any single reading of the tile.
+        // Newest board addition first. It is the tile that was just discarded
+        // and is therefore the one a call prompt is offering. LastDiscardTile
+        // can lag a pond read by a tick (it was stale at 9m/6z in a live log),
+        // and the chi AtkValue slot is documented as often holding a hand tile.
         var candidateTiles = new List<int>();
-        if (pondClaimedTile is >= 0 and < Tiles.Kinds)
-            candidateTiles.Add(pondClaimedTile);
-
-        // The shipped solver reads the chi claim from one specific slot, noting
-        // that nearby slots "often decode as unrelated hand tiles" -- which is
-        // exactly what the captured logs showed.
-        int chiSlot = ReadTileAt(unit, profile, codes.ChiClaimedTile);
-        if (chiSlot >= 0 && !candidateTiles.Contains(chiSlot))
-            candidateTiles.Add(chiSlot);
-
-        // A tick can land between two board changes, so keep a few recent ones.
         if (recentAdditions is not null)
         {
             foreach (int tile in recentAdditions)
@@ -117,6 +110,13 @@ public sealed unsafe class CallPromptReader
                     candidateTiles.Add(tile);
             }
         }
+
+        if (pondClaimedTile is >= 0 and < Tiles.Kinds && !candidateTiles.Contains(pondClaimedTile))
+            candidateTiles.Add(pondClaimedTile);
+
+        int chiSlot = ReadTileAt(unit, profile, codes.ChiClaimedTile);
+        if (chiSlot >= 0 && !candidateTiles.Contains(chiSlot))
+            candidateTiles.Add(chiSlot);
 
         int claimed = ChooseLegalClaim(candidateTiles, available, handCounts);
 

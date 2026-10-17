@@ -7,7 +7,7 @@ namespace MahjongAdvisor;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 4;
+    public int Version { get; set; } = 5;
 
     public bool ShowOverlay { get; set; } = true;
 
@@ -120,6 +120,16 @@ public sealed class Configuration : IPluginConfiguration
             AutoPlay = true;
             LogGames = true;
             Version = 4;
+            changed = true;
+        }
+
+        // v5 re-arms after the no-yaku/tsumo freeze stop. This build fixes that
+        // path, so the next launch is unattended again unless stopped.
+        if (Version < 5)
+        {
+            AutoPlay = true;
+            LogGames = true;
+            Version = 5;
             changed = true;
         }
 

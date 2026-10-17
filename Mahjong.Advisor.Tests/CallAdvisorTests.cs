@@ -237,6 +237,31 @@ public class CallAdvisorTests
     }
 
     [Fact]
+    public void CompleteOpenHandWithNoYakuIsRejected()
+    {
+        // The second live freeze: 345p 789p 345s 66z + 999m is complete but
+        // has no yaku, so the client correctly offers no tsumo. The controller
+        // must not treat "complete" as "can win".
+        var full = Tiles.Parse("345789p345s66z");
+        full[Build.Tile("9m")] += 3;
+        Assert.False(CallAdvisor.HasOpenYakuPath(full, 0, CallKind.Pass));
+    }
+
+    [Fact]
+    public void IttsuCountsAsAYakuPath()
+    {
+        var full = Tiles.Parse("123456789m22z");
+        Assert.True(CallAdvisor.HasOpenYakuPath(full, 0, CallKind.Pass));
+    }
+
+    [Fact]
+    public void SanshokuCountsAsAYakuPath()
+    {
+        var full = Tiles.Parse("123m123p123s55z");
+        Assert.True(CallAdvisor.HasOpenYakuPath(full, 0, CallKind.Pass));
+    }
+
+    [Fact]
     public void PassDoesNotInventAThirdCopy()
     {
         // A pair of dragons is not a dragon triplet. The old default of one extra

@@ -6,7 +6,7 @@ discard by hand speed against deal-in risk. Auto-play and file logging are on by
 default in this build: sit at a casual table and it plays. Manual suggestion
 mode is one command away (`/mjadv stop`).
 
-**0.3.4.0** is the current public build. The engine and most of the reader were
+**0.3.5.0** is the current public build. The engine and most of the reader were
 played live before this version; the meld mapping, the call-prompt fixes, the
 expected-value model and the new auto-play controller still need a live pass.
 
@@ -15,7 +15,7 @@ expected-value model and the new auto-play controller still need a live pass.
 | Project | Contents |
 |---|---|
 | `Mahjong.Advisor` | Pure engine — shanten, ukeire, safety, threat model, discard and call ranking. No Dalamud reference. |
-| `Mahjong.Advisor.Tests` | 190 xUnit tests over the engine, including the shanten vectors. |
+| `Mahjong.Advisor.Tests` | 193 xUnit tests over the engine, including the shanten vectors. |
 | `Mahjong.Advisor.Plugin` | Dalamud shell — addon reading, overlay, control panel, JSONL game log, optional auto-play actuator. |
 | `Mahjong.Advisor.Simulator` | Offline console app for tuning parameters against identical deals. |
 
@@ -126,6 +126,13 @@ logged games:
   accept the Pass callback there; the bot just discards normally, which
   declines the kan. Firing Pass four times was the freeze in the first
   0.3.3.0 run.
+- A **complete open hand with no yaku is not a win.** The bot checks for a yaku
+  before firing the unlabelled tsumo option; otherwise it keeps discarding.
+  Treating “complete” as “can win” was the second freeze.
+- Call prompts now prefer the **newest board addition** over a stale pond tile.
+  The second live log claimed a 6z dragon Pon while the actual claim was 9m,
+  which opened a no-yaku hand. The log now records the pond’s last discard and
+  seat so this is visible next time.
 - Discard advice is only computed at our actual decision states (6/30/28/22), so
   a call or result screen can no longer leave an old “discard X” on the overlay.
 
@@ -280,10 +287,10 @@ Then:
 
 ```powershell
 git add .
-git commit -m "Mahjong Advisor v0.3.4.0"
+git commit -m "Mahjong Advisor v0.3.5.0"
 git push origin main
-git tag v0.3.4.0
-git push origin v0.3.4.0
+git tag v0.3.5.0
+git push origin v0.3.5.0
 ```
 
 CI runs the tests, builds the plugin and publishes `MahjongAdvisor.zip` on the

@@ -31,6 +31,11 @@ public sealed class LogRecord
     /// <summary>Whether the display-slot hand read matched the memory hand.</summary>
     public bool HandSlotsValid { get; set; }
 
+    /// <summary>Newest discard the pond tracker saw at this point.</summary>
+    public string? LastDiscard { get; set; }
+
+    public int LastDiscardSeat { get; set; } = -1;
+
     /// <summary>Points per seat, ours first. A riichi declaration costs exactly 1000.</summary>
     public int[] Scores { get; set; } = [];
 
@@ -140,7 +145,7 @@ public sealed class GameLogger : IDisposable
     private readonly object gate = new();
 
     /// <summary>Bumped whenever behaviour changes, so logs are attributable.</summary>
-    public const string BuildStamp = "2026-10-18.6";
+    public const string BuildStamp = "2026-10-18.7";
 
     private string? currentPath;
     private string lastFingerprint = "";
@@ -221,6 +226,8 @@ public sealed class GameLogger : IDisposable
             RejectedTiles = read.RejectedTiles,
             TextureBaseShifted = read.TextureBaseShifted,
             HandSlotsValid = read.HandSlotsValid,
+            LastDiscard = read.LastDiscardTile >= 0 ? Tiles.Name(read.LastDiscardTile) : null,
+            LastDiscardSeat = read.LastDiscardSeat,
             SeatDiscards = [.. table.Seats.Select(s => string.Join(" ", s.Discards.Select(Tiles.Name)))],
             SeatRiichi = [.. table.Seats.Select(s => s.Riichi)],
             SeatMelds = [.. table.Seats.Select(s => string.Join(" ", s.MeldTiles.Select(Tiles.Name)))],
@@ -340,6 +347,10 @@ public sealed class GameLogger : IDisposable
             HandSlotsValid = read?.HandSlotsValid ?? false,
             RejectedTiles = read?.RejectedTiles ?? 0,
             TextureBaseShifted = read?.TextureBaseShifted ?? false,
+            LastDiscard = read is { LastDiscardTile: >= 0 }
+                ? Tiles.Name(read.LastDiscardTile)
+                : null,
+            LastDiscardSeat = read?.LastDiscardSeat ?? -1,
         };
 
         if (read?.Table is { } table)
