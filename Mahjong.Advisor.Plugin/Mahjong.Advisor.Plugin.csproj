@@ -1,0 +1,36 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+
+  <PropertyGroup>
+    <Version>0.2.0.0</Version>
+    <Authors>dexcss</Authors>
+    <Description>Reads your Doman Mahjong hand and recommends a discard, ranked by hand speed against deal-in risk.</Description>
+    <AssemblyName>Mahjong.Advisor.Plugin</AssemblyName>
+    <RootNamespace>MahjongAdvisor</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!-- Users never read these symbols; shipping them only bloats the package. -->
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mahjong.Advisor\Mahjong.Advisor.csproj" />
+  </ItemGroup>
+
+  <!--
+    Layout profiles are loaded at runtime from the plugin folder. If they are
+    missing, LayoutProfileLoader falls back to the built-in Emj/EmjL defaults,
+    so a packaging miss degrades rather than breaks.
+  -->
+  <ItemGroup>
+    <Content Include="layouts\*.json"
+             Link="layouts\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

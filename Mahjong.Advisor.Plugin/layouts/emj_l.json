@@ -1,0 +1,59 @@
+{
+  "name": "EmjL",
+  "addonName": "EmjL",
+  "tileTextureBase": 76041,
+  "offsets": {
+    "handArrayStart": 3512,
+    "doraIndicator": 4056,
+    "seatScores": [
+      1280,
+      2016,
+      2752,
+      3488
+    ],
+    "seatDiscardCountBytes": [
+      1278,
+      2014,
+      2750,
+      3486
+    ]
+  },
+  "stateCodes": {
+    "ourTurnDiscard": 30,
+    "selfDeclareList": 6,
+    "callPrompt": 15,
+    "postDrawIdle": 5,
+    "stateCodeValueIndex": 0,
+    "wallCountValueIndex": 1
+  },
+  "pondContainerNodeIds": [
+    116,
+    119,
+    122,
+    125
+  ],
+  "meldContainerNodeIds": [
+    112,
+    113,
+    114,
+    115
+  ],
+  "meldSlotNodeIds": [
+    [112, 1120001, 1120002, 1120003],
+    [113, 1130001, 1130002, 1130003],
+    [114, 1140001, 1140002, 1140003],
+    [115, 1150001, 1150002, 1150003]
+  ],
+  "limits": {
+    "handSize": 14,
+    "wallInitial": 70,
+    "scoreSanityMax": 200000,
+    "discardCountSanityMax": 40
+  },
+  "riichiMarkerNodeIds": [
+    117,
+    120,
+    123,
+    126
+  ]
+}

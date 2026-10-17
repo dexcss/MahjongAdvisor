@@ -1,0 +1,20 @@
+{
+  "Name": "Mahjong Advisor",
+  "Author": "dexcss",
+  "Punchline": "Discard advice for Doman Mahjong.",
+  "Description": "Reads your Doman Mahjong hand and recommends a discard, ranked by hand speed against deal-in risk. Suggestion only - it never plays for you.\n\nDiscard piles and called-meld strips are found automatically. /mjadv nodes is only needed if detection fails on your client.",
+  "InternalName": "Mahjong.Advisor.Plugin",
+  "AssemblyVersion": "0.2.0.0",
+  "TestingAssemblyVersion": "0.2.0.0",
+  "RepoUrl": "https://github.com/dexcss/MahjongAdvisor",
+  "ApplicableVersion": "any",
+  "DalamudApiLevel": 15,
+  "TestingDalamudApiLevel": 15,
+  "LoadRequiredState": 0,
+  "LoadSync": false,
+  "CanUnloadAsync": false,
+  "LoadPriority": 0,
+  "Tags": ["mahjong", "doman", "gold-saucer"],
+  "CategoryTags": ["Utility"],
+  "AcceptsFeedback": true
+}

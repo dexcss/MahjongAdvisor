@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          # The plugin targets net10.0-windows (Dalamud API 15); the tests
+          # target net9.0. Install both runtimes so `dotnet test` finds a 9.0 host.
+          dotnet-version: |
+            9.0.x
+            10.0.x
+
+      - name: Download Dalamud
+        shell: pwsh
+        run: |
+          $hooks = Join-Path $env:AppData 'XIVLauncher\addon\Hooks\dev'
+          New-Item -ItemType Directory -Force -Path $hooks | Out-Null
+          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
+          Expand-Archive -Force latest.zip $hooks
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Test
+        run: dotnet test Mahjong.Advisor.Tests/Mahjong.Advisor.Tests.csproj --configuration Release --no-restore
+
+      - name: Build
+        run: dotnet build Mahjong.Advisor.Plugin/Mahjong.Advisor.Plugin.csproj --configuration Release --no-restore
+
+      - name: Locate package
+        id: pkg
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Path Mahjong.Advisor.Plugin/bin -Recurse -Filter latest.zip | Select-Object -First 1
+          if (-not $zip) { throw "latest.zip not found - DalamudPackager did not run" }
+          Copy-Item $zip.FullName 'MahjongAdvisor.zip' -Force
+          $out = (Resolve-Path 'MahjongAdvisor.zip').Path
+          "path=$out" >> $env:GITHUB_OUTPUT
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2.2.1
+        with:
+          files: |
+            ${{ steps.pkg.outputs.path }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
