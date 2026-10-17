@@ -313,8 +313,21 @@ public static class DiagnosticBundle
             if (!File.Exists(path))
                 return "dalamud.log not found.";
 
-            var lines = File.ReadLines(path).TakeLast(5000);
-            return string.Join(Environment.NewLine, lines);
+            // Dalamud keeps this file open for writing. Open it with sharing
+            // instead of letting File.ReadLines fail on the lock.
+            using var stream = new FileStream(
+                path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream);
+
+            var tail = new Queue<string>(5000);
+            while (reader.ReadLine() is { } line)
+            {
+                if (tail.Count == 5000)
+                    tail.Dequeue();
+                tail.Enqueue(line);
+            }
+
+            return string.Join(Environment.NewLine, tail);
         }
         catch (Exception ex)
         {

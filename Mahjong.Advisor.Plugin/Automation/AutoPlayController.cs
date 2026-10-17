@@ -234,6 +234,15 @@ public sealed unsafe class AutoPlayController
             return;
         }
 
+        // State 27 is the result/score screen between hands. The game advances
+        // it itself; do not guess an opcode. Keep the overlay honest while it
+        // is up instead of showing stale discard advice.
+        if (state == profile.StateCodes.BetweenHands)
+        {
+            LastStatus = "result screen (game continues)";
+            return;
+        }
+
         // Result screens are the one action that does not need a readable hand;
         // everything below is a decision that does.
         if (read.Table is null)
@@ -244,13 +253,22 @@ public sealed unsafe class AutoPlayController
 
         if (state == profile.StateCodes.CallPrompt)
         {
+            // 15 is also the generic "other players are acting" state. Only a
+            // readable option set is actually a call prompt for us.
+            if (prompt.Available.Count == 0)
+            {
+                LastStatus = "waiting for other players";
+                return;
+            }
+
             DoCall(read, prompt, callAdvice, profile);
             return;
         }
 
         if (state == profile.StateCodes.OurTurnDiscard
             || state == profile.StateCodes.SelfDeclareList
-            || state == profile.StateCodes.CallPromptList)
+            || state == profile.StateCodes.CallPromptList
+            || state == profile.StateCodes.RiichiDiscard)
         {
             DoTurn(
                 read,
@@ -671,7 +689,8 @@ public sealed unsafe class AutoPlayController
         int state = ReadState(unit, profile);
         if (state != profile.StateCodes.OurTurnDiscard
             && state != profile.StateCodes.SelfDeclareList
-            && state != profile.StateCodes.CallPromptList)
+            && state != profile.StateCodes.CallPromptList
+            && state != profile.StateCodes.RiichiDiscard)
         {
             Log($"discard: not a discard state (state {state})");
             return false;
@@ -803,7 +822,8 @@ public sealed unsafe class AutoPlayController
 
         if (state == codes.OurTurnDiscard
             || state == codes.SelfDeclareList
-            || state == codes.CallPromptList)
+            || state == codes.CallPromptList
+            || state == codes.RiichiDiscard)
         {
             return Roll(config.AutoPlayTurnDelayMinMs, config.AutoPlayTurnDelayMaxMs);
         }
@@ -827,7 +847,8 @@ public sealed unsafe class AutoPlayController
             || state == codes.CallPrompt
             || state == codes.OurTurnDiscard
             || state == codes.SelfDeclareList
-            || state == codes.CallPromptList;
+            || state == codes.CallPromptList
+            || state == codes.RiichiDiscard;
     }
 
     private void RecordAction(AutoActionKind kind, string label)

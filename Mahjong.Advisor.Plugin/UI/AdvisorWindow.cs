@@ -452,27 +452,45 @@ public sealed class AdvisorWindow : Window
     private void DrawWaiting(BoardRead read)
     {
         int total = Tiles.Total(read.Table!.Hand);
-        string message = total % 3 == 1
-            ? "Waiting for your draw..."
-            : "Reading the board...";
+        string label = StateLabel(read);
+        string message = label switch
+        {
+            "result screen" => "Result screen - the game will continue automatically.",
+            "result" => "Hand result - waiting for the next hand.",
+            "end of hand" => "End of hand - waiting for the result.",
+            "waiting for other players" => "Waiting for other players...",
+            "call prompt" => "Call prompt...",
+            _ when total % 3 == 1 => "Waiting for your draw...",
+            _ => "Reading the board...",
+        };
+
         ImGui.TextColored(UiTheme.Muted, message);
         ImGui.Spacing();
         DrawHandStrip(read, -1);
     }
 
-    private static string StateLabel(BoardRead read)
+    private string StateLabel(BoardRead read)
     {
         var codes = read.Profile?.StateCodes;
         if (codes is null)
             return $"state {read.StateCode}";
 
         int state = read.StateCode;
+        if (state == codes.RiichiDiscard)
+            return "riichi discard";
+        if (state == codes.BetweenHands)
+            return "result screen";
         if (state == codes.HandResult)
             return "result";
         if (state == codes.EndOfHand)
             return "end of hand";
         if (state == codes.CallPrompt)
-            return "call prompt";
+        {
+            return plugin.LastCallAdvice?.Best is not null
+                ? "call prompt"
+                : "waiting for other players";
+        }
+
         if (state == codes.ChiVariantSelect)
             return "choose chi shape";
         if (state == codes.SelfDeclareList

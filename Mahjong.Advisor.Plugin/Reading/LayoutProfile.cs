@@ -130,6 +130,12 @@ public sealed class LayoutStateCodes
     public int OurTurnDiscard { get; set; } = 30;
     public int SelfDeclareList { get; set; } = 6;
     public int CallPrompt { get; set; } = 15;
+
+    /// <summary>Our forced discard after declaring riichi (drawn tile only).</summary>
+    public int RiichiDiscard { get; set; } = 22;
+
+    /// <summary>Result/score screen between hands. The game advances this itself.</summary>
+    public int BetweenHands { get; set; } = 27;
     /// <summary>
     /// Post-call discard surface (28 on this client). The name is historical:
     /// the reference's live captures confirm the call popup itself is 15.

@@ -23,6 +23,8 @@
     "selfDeclareList": 6,
     "callPrompt": 15,
     "callPromptList": 28,
+    "riichiDiscard": 22,
+    "betweenHands": 27,
     "chiVariantSelect": 25,
     "handResult": 29,
     "endOfHand": 32,

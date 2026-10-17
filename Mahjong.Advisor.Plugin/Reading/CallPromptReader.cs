@@ -78,7 +78,12 @@ public sealed unsafe class CallPromptReader
         var (_, candidates) = ScanClaimedTile(unit, profile, codes);
 
         if (available.Count == 0)
-            return CallPrompt.None;
+        {
+            // Keep the raw button run for diagnostics. State 15 is also the
+            // generic "other players are acting" state; seeing what is actually
+            // on screen explains why it is not a call for us.
+            return new CallPrompt(stateCode, [], -1, options, labels, candidates);
+        }
 
         // Prefer a candidate that is actually legal for what the prompt offers.
         // Pon needs two in hand, chi needs a run partner -- that constraint is far

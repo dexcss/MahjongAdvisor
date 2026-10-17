@@ -168,12 +168,24 @@ public sealed class Plugin : IDalamudPlugin
                 return;
             }
 
+            // Only compute discard advice at a real decision state. State 15 is
+            // also the generic "other players are acting" state, and 27/29/32
+            // are result screens; showing a stale discard there is what made
+            // the overlay look stuck.
+            int state = read.StateCode;
+            var codes = read.Profile?.StateCodes;
+            bool ourTurn = codes is not null
+                && (state == codes.OurTurnDiscard
+                    || state == codes.SelfDeclareList
+                    || state == codes.CallPromptList
+                    || state == codes.RiichiDiscard);
+
             // A call prompt takes priority: the question is whether to claim,
             // not what to throw.
             LastPrompt = ReadPrompt(read);
             LastCallAdvice = BuildCallAdvice(read, LastPrompt);
+            LastAdvice = ourTurn ? Configuration.Advisor.Recommend(read.Table) : null;
 
-            LastAdvice = Configuration.Advisor.Recommend(read.Table);
             GameLogger.Record(read, LastAdvice, LastPrompt, LastCallAdvice, PondDiagnostic(), Reader.RotatedPerSeat, Reader.DiscardCountBytes, [.. Reader.UnknownPondTextures],
                 [.. Reader.NewlyVisible.Select(n => $"{n.NodeId}@{n.X:0},{n.Y:0}:{n.TextureId}")]);
             RunAutoPlay(read);

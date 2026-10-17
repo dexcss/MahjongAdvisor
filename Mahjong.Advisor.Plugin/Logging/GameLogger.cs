@@ -100,6 +100,9 @@ public sealed class LogRecord
     public int[]? PromptRawClaim { get; set; }
     public string[]? PromptOptions { get; set; }
 
+    /// <summary>Raw popup button run as "index:label", even when it is not a call.</summary>
+    public string[]? PromptRawOptions { get; set; }
+
     /// <summary>How the discard piles were located, and per-seat tile counts.</summary>
     public string? PondMapping { get; set; }
 
@@ -137,7 +140,7 @@ public sealed class GameLogger : IDisposable
     private readonly object gate = new();
 
     /// <summary>Bumped whenever behaviour changes, so logs are attributable.</summary>
-    public const string BuildStamp = "2026-10-18.3";
+    public const string BuildStamp = "2026-10-18.4";
 
     private string? currentPath;
     private string lastFingerprint = "";
@@ -248,6 +251,7 @@ public sealed class GameLogger : IDisposable
             record.PromptLabels = [.. prompt.RawLabels];
             record.PromptRawClaim = [.. prompt.RawClaimCandidates];
             record.PromptOptions = [.. prompt.Available.Select(a => a.ToString())];
+            record.PromptRawOptions = [.. prompt.Options.Select(o => $"{o.Option}:{o.Label}")];
 
             if (callAdvice is not null)
             {
@@ -353,12 +357,13 @@ public sealed class GameLogger : IDisposable
             record.SeatMelds = [.. table.Seats.Select(s => string.Join(" ", s.MeldTiles.Select(Tiles.Name)))];
         }
 
-        if (prompt.Available.Count > 0)
+        if (prompt.Available.Count > 0 || prompt.Options.Count > 0 || prompt.RawLabels.Count > 0)
         {
             record.ClaimedTile = prompt.HasClaimedTile ? Tiles.Name(prompt.ClaimedTile) : null;
             record.PromptOptions = [.. prompt.Available.Select(a => a.ToString())];
             record.PromptLabels = [.. prompt.RawLabels];
             record.PromptRawClaim = [.. prompt.RawClaimCandidates];
+            record.PromptRawOptions = [.. prompt.Options.Select(o => $"{o.Option}:{o.Label}")];
         }
 
         if (advice?.Best is { } best)
