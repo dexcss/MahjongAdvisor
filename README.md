@@ -6,7 +6,7 @@ discard by hand speed against deal-in risk. Auto-play and file logging are on by
 default in this build: sit at a casual table and it plays. Manual suggestion
 mode is one command away (`/mjadv stop`).
 
-**0.3.10.0** is the current public build. The engine and most of the reader were
+**0.4.0.0** is the current public build. The engine and most of the reader were
 played live before this version; the meld mapping, the call-prompt fixes, the
 expected-value model and the new auto-play controller still need a live pass.
 
@@ -193,6 +193,19 @@ A one-time v3 config migration resets old custom values to these. After that,
 changes made in Settings persist normally. `Reset to recommended` in Settings
 restores the same values.
 
+### Hand value
+
+Completed hands are scored exactly — yaku, fu, dora, aka dora and the payment
+table, from pinfu and yakuhai through honitsu, ittsuu and the yakuman. The
+offline simulator uses that scoring for every win, including legality and
+payouts. Live push/fold decisions still use the fitted dora model: a 1,500-hand
+A/B of exact ready-hand valuation showed the two value scales must be unified
+before they can be mixed (win rate fell from 15.4% to 8.1% because a ready hand
+priced at its true 1,000-2,000 points lost to a one-away hand still carrying the
+old ~3,000-point estimate). The exact valuation is implemented and unit-tested;
+it stays out of the live decision until the scale is recalibrated for every
+shanten.
+
 ## Commands
 
 | Command | Action |
@@ -302,10 +315,10 @@ Then:
 
 ```powershell
 git add .
-git commit -m "Mahjong Advisor v0.3.10.0"
+git commit -m "Mahjong Advisor v0.4.0.0"
 git push origin main
-git tag v0.3.10.0
-git push origin v0.3.10.0
+git tag v0.4.0.0
+git push origin v0.4.0.0
 ```
 
 CI runs the tests, builds the plugin and publishes `MahjongAdvisor.zip` on the

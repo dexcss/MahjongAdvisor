@@ -5,6 +5,29 @@ using Mahjong.Advisor.Simulator;
 int hands = args.Length > 0 && int.TryParse(args[0], out int n) ? n : 1000;
 int seed = args.Length > 1 && int.TryParse(args[1], out int s) ? s : 12345;
 
+if (args.Length > 2 && args[2] == "exact")
+{
+    Sweep(
+        "Exact ready-hand value only:",
+        "value",
+        [("exact", new DiscardAdvisor { ExactTenpaiValue = true })],
+        hands, seed);
+    return;
+}
+
+if (args.Length > 2 && args[2] == "value")
+{
+    // Isolated A/B of the exact ready-hand value model. Both rows use the same
+    // exact outcome scoring, so only the wait valuation differs.
+    Sweep(
+        "Exact ready-hand value vs the old dora multiplier:",
+        "value",
+        ((bool[])[false, true]).Select(v =>
+            (v ? "exact" : "heuristic", new DiscardAdvisor { ExactTenpaiValue = v })),
+        hands, seed);
+    return;
+}
+
 Console.WriteLine($"Simulating {hands} hands per configuration (seed {seed}).");
 Console.WriteLine("Closed hands only, no calls. Every configuration plays the same deals.");
 Console.WriteLine();
@@ -60,6 +83,16 @@ Sweep(
     "penalty",
     ((double[])[0.5, 1.5, 2.5, 4.0]).Select(v =>
         ($"{v:0.0}", new DiscardAdvisor { NoYakuPenalty = v })),
+    hands, seed);
+
+// Ready hands are now priced from yaku/fu/dora instead of a dora multiplier.
+// This isolates the value model: both rows play the same deals and use the same
+// exact scoring, so the difference is only how the wait is valued.
+Sweep(
+    "Exact ready-hand value vs the old dora multiplier:",
+    "value",
+    ((bool[])[false, true]).Select(v =>
+        (v ? "exact" : "heuristic", new DiscardAdvisor { ExactTenpaiValue = v })),
     hands, seed);
 
 Console.WriteLine();

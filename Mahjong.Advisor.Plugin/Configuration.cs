@@ -73,16 +73,46 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>
     /// Computed views must never be serialised -- Newtonsoft writes every public
     /// property by default and a computed collection duplicates the whole graph
-    /// on every save.
+    /// on every save. The advisor cache is per config state, not saved.
     /// </summary>
-    [JsonIgnore]
-    public DiscardAdvisor Advisor => new()
+    [JsonIgnore] private DiscardAdvisor? advisorCache;
+    [JsonIgnore] private double advisorWin;
+    [JsonIgnore] private double advisorDealIn;
+    [JsonIgnore] private double advisorNoten;
+    [JsonIgnore] private double advisorOpponent;
+
+    public DiscardAdvisor Advisor
     {
-        AverageWinValue = AverageWinValue,
-        AverageDealInCost = AverageDealInCost,
-        NotenPenaltyValue = NotenPenaltyValue,
-        Threats = new ThreatModel { BaseHandValue = OpponentHandValue },
-    };
+        get
+        {
+            // One instance per config state: the overlay and the controller ask
+            // for advice on the same table several times a second, and the
+            // advisor memoises its last answer. A fresh instance every call
+            // would throw that away.
+            if (advisorCache is not null
+                && advisorWin == AverageWinValue
+                && advisorDealIn == AverageDealInCost
+                && advisorNoten == NotenPenaltyValue
+                && advisorOpponent == OpponentHandValue)
+            {
+                return advisorCache;
+            }
+
+            advisorWin = AverageWinValue;
+            advisorDealIn = AverageDealInCost;
+            advisorNoten = NotenPenaltyValue;
+            advisorOpponent = OpponentHandValue;
+            advisorCache = new DiscardAdvisor
+            {
+                AverageWinValue = AverageWinValue,
+                AverageDealInCost = AverageDealInCost,
+                NotenPenaltyValue = NotenPenaltyValue,
+                Threats = new ThreatModel { BaseHandValue = OpponentHandValue },
+            };
+
+            return advisorCache;
+        }
+    }
 
     public void Initialize()
     {

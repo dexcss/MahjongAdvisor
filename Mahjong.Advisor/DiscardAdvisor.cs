@@ -47,6 +47,16 @@ public sealed class DiscardAdvisor
     public double ClosedHanBonus { get; init; } = 1.8;
 
     /// <summary>
+    /// Price a ready hand from its actual yaku/fu/dora instead of the dora
+    /// multiplier. Off by default: a 1,500-hand A/B showed exact tenpai values
+    /// mixed with the heuristic value used for non-tenpai options is
+    /// inconsistent (win rate fell 15.4% to 8.1%) because the model then
+    /// prefers staying one-away over reaching tenpai. Enable only alongside a
+    /// common value scale for every shanten.
+    /// </summary>
+    public bool ExactTenpaiValue { get; init; }
+
+    /// <summary>
     /// Swing from being tenpai rather than noten when the wall runs out. You
     /// collect from players who are not ready and pay those who are, so the gap
     /// between the two outcomes is worth roughly this much.
@@ -72,6 +82,78 @@ public sealed class DiscardAdvisor
     {
         ArgumentNullException.ThrowIfNull(table);
 
+        long key = Signature(table);
+        lock (adviceLock)
+        {
+            if (adviceCache is not null && adviceKey == key)
+                return adviceCache;
+        }
+
+        var advice = RecommendCore(table);
+
+        lock (adviceLock)
+        {
+            adviceKey = key;
+            adviceCache = advice;
+        }
+
+        return advice;
+    }
+
+    private readonly object adviceLock = new();
+    private long adviceKey;
+    private Advice? adviceCache;
+
+    /// <summary>
+    /// 64-bit fingerprint of everything the advice depends on. The overlay and
+    /// the auto-play controller both ask for advice several times per second on
+    /// the same state; exact scoring is far too expensive to repeat for that.
+    /// </summary>
+    private static long Signature(TableState table)
+    {
+        ulong hash = 1469598103934665603UL;
+
+        void Mix(int value)
+        {
+            hash ^= (ulong)(uint)value;
+            hash *= 1099511628211UL;
+        }
+
+        for (int i = 0; i < Tiles.Kinds; i++)
+            Mix(table.Hand[i]);
+
+        Mix(table.CalledMelds);
+        Mix(table.WallRemaining);
+        Mix((int)table.Observations);
+        Mix(table.SelfRiichi ? 1 : 0);
+        Mix(table.RiichiDeclarationPending ? 1 : 0);
+        Mix(table.DrawnTile);
+        Mix(table.AkaDora);
+
+        foreach (int indicator in table.DoraIndicators)
+            Mix(indicator);
+
+        foreach (int forbidden in table.ForbiddenDiscards)
+            Mix(forbidden);
+
+        foreach (int score in table.Scores)
+            Mix(score);
+
+        foreach (var seat in table.Seats)
+        {
+            Mix(seat.Riichi ? 1 : 0);
+            Mix(seat.RiichiDiscardIndex);
+            foreach (int tile in seat.Discards)
+                Mix(tile);
+            foreach (int tile in seat.MeldTiles)
+                Mix(tile);
+        }
+
+        return (long)hash;
+    }
+
+    private Advice RecommendCore(TableState table)
+    {
         int total = Tiles.Total(table.Hand);
         int expected = 14 - (table.CalledMelds * 3);
         if (total != expected)
@@ -127,6 +209,18 @@ public sealed class DiscardAdvisor
 
             work[t]--;
             var uk = UkeireCalculator.Calculate(work, visible, table.CalledMelds);
+
+            // A ready hand is worth exactly what its waits score, not a dora
+            // multiplier. Re-price the option while the hand is still small.
+            double optionValue = winValue;
+            if (ExactTenpaiValue && uk.Shanten == 0)
+            {
+                double exact = HandValueEstimator.ExpectedTenpaiValue(
+                    table, work, uk.Accepted, riichi: closedHand);
+                if (exact > 0)
+                    optionValue = exact * stance.HandValue;
+            }
+
             work[t]++;
 
             // Declaring riichi requires staying ready, so anything that breaks
@@ -157,7 +251,7 @@ public sealed class DiscardAdvisor
             double cumulativeRisk = 1.0 - Math.Pow(1.0 - risk.DealInRate, pushes);
             double perDeal = risk.DealInRate > 0 ? ExpectedLoss(risk) / risk.DealInRate : AverageDealInCost;
 
-            double ev = (win * winValue)
+            double ev = (win * optionValue)
                 + (tenpai * NotenPenaltyValue * ExhaustiveDrawRate)
                 - (cumulativeRisk * perDeal * stance.Danger);
 

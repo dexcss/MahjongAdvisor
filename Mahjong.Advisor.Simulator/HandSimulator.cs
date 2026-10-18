@@ -84,9 +84,13 @@ public sealed class HandSimulator
                 hands[turn][lastDrawn]++;
 
                 if (Shanten.Calculate(hands[turn], melds[turn]) < 0
-                    && CanWin(hands[turn], meldTiles[turn], melds[turn]))
+                    && CanWin(hands[turn], meldTiles[turn], riichi[turn], lastDrawn, tsumo: true))
                 {
-                    return new HandOutcome(turn, -1, false, Value(hands[turn], melds[turn], riichi[turn]));
+                    return new HandOutcome(
+                        turn,
+                        -1,
+                        false,
+                        Value(hands[turn], meldTiles[turn], riichi[turn], lastDrawn, tsumo: true));
                 }
             }
 
@@ -143,11 +147,16 @@ public sealed class HandSimulator
 
                 hands[q][discard]++;
                 bool wins = Shanten.Calculate(hands[q], melds[q]) < 0
-                    && CanWin(hands[q], meldTiles[q], melds[q]);
-                hands[q][discard]--;
+                    && CanWin(hands[q], meldTiles[q], riichi[q], discard, tsumo: false);
 
                 if (wins)
-                    return new HandOutcome(q, turn, false, Value(hands[q], melds[q], riichi[q]));
+                {
+                    int points = Value(hands[q], meldTiles[q], riichi[q], discard, tsumo: false);
+                    hands[q][discard]--;
+                    return new HandOutcome(q, turn, false, points);
+                }
+
+                hands[q][discard]--;
             }
 
             // Anyone may claim it, us included. Riichi hands cannot call.
@@ -279,20 +288,50 @@ public sealed class HandSimulator
     /// always has something — riichi, self-draw, all-simples, pinfu. An open one
     /// needs a real pattern, which is what stops indiscriminate calling.
     /// </summary>
-    private static bool CanWin(int[] concealed, List<int> meldTiles, int melds)
+    /// <summary>
+    /// Exact win legality: yaku, fu and dora are computed here too. A closed
+    /// ron with no yaku is not a win; menzen tsumo and riichi both qualify.
+    /// </summary>
+    private static bool CanWin(
+        int[] concealed,
+        List<int> meldTiles,
+        bool riichi,
+        int winTile,
+        bool tsumo)
     {
-        if (melds == 0)
-            return true;
+        var value = HandValue.Evaluate(new HandValueRequest
+        {
+            Concealed = concealed,
+            Melds = HandValue.ParseMelds(meldTiles),
+            Method = tsumo ? WinMethod.Tsumo : WinMethod.Ron,
+            WinningTile = winTile,
+            Riichi = riichi,
+        });
 
-        var full = (int[])concealed.Clone();
-        foreach (int t in meldTiles)
-            full[t]++;
-
-        return CallAdvisor.HasOpenYakuPath(full, meldTiles.Count > 0 ? meldTiles[0] : 0, CallKind.Pass);
+        return value is not null;
     }
 
-    private static int Value(int[] hand, int melds, bool riichi)
+    private static int Value(
+        int[] hand,
+        List<int> meldTiles,
+        bool riichi,
+        int winTile,
+        bool tsumo)
     {
+        var value = HandValue.Evaluate(new HandValueRequest
+        {
+            Concealed = hand,
+            Melds = HandValue.ParseMelds(meldTiles),
+            Method = tsumo ? WinMethod.Tsumo : WinMethod.Ron,
+            WinningTile = winTile,
+            Riichi = riichi,
+        });
+
+        if (value is not null)
+            return value.TotalPoints(tsumo ? WinMethod.Tsumo : WinMethod.Ron);
+
+        // Should be unreachable once CanWin agrees, but never lose an outcome to
+        // a scoring gap: fall back to the old shape value.
         int triplets = 0;
         for (int t = 0; t < Tiles.Kinds; t++)
         {
@@ -303,8 +342,8 @@ public sealed class HandSimulator
         int points = 2600 + (triplets * 1200);
         if (riichi)
             points = (int)(points * 1.8);
-        if (melds > 0)
-            points = (int)(points * 0.7); // open hands are cheaper
+        if (meldTiles.Count > 0)
+            points = (int)(points * 0.7);
 
         return Math.Clamp(points, 1000, 12000);
     }
