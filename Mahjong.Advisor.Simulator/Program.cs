@@ -5,6 +5,17 @@ using Mahjong.Advisor.Simulator;
 int hands = args.Length > 0 && int.TryParse(args[0], out int n) ? n : 1000;
 int seed = args.Length > 1 && int.TryParse(args[1], out int s) ? s : 12345;
 
+if (args.Length > 2 && args[2] == "rail")
+{
+    Sweep(
+        "Double-riichi fold rail:",
+        "rail",
+        ((bool[])[false, true]).Select(v =>
+            (v ? "on" : "off", new DiscardAdvisor { TwoRiichiFold = v })),
+        hands, seed);
+    return;
+}
+
 if (args.Length > 2 && args[2] == "exact")
 {
     Sweep(

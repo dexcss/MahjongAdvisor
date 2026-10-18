@@ -93,6 +93,7 @@ public sealed unsafe class EmjBoardReader
 
     private readonly bool[] riichiDeclared = new bool[4];
     private readonly int[] riichiAtIndex = [-1, -1, -1, -1];
+    private readonly int[]?[] riichiPondSnapshots = new int[]?[4];
     private int previousWall = -1;
 
     public int[] LastScores { get; private set; } = [];
@@ -487,6 +488,7 @@ public sealed unsafe class EmjBoardReader
                 continue;
             seats[i].Riichi = true;
             seats[i].RiichiDiscardIndex = riichiAtIndex[i];
+            seats[i].RiichiPondCounts = riichiPondSnapshots[i];
         }
 
         // The riichi marker sits next to each pile and only appears on declaration.
@@ -510,6 +512,12 @@ public sealed unsafe class EmjBoardReader
 
                 riichiDeclared[i] = true;
                 riichiAtIndex[i] = Math.Max(0, seats[i].Discards.Count - 1);
+
+                // Freeze every seat's pond length at the declaration. Tiles
+                // appended after this point are safe against this seat; pond
+                // lengths alone cannot recover that boundary later once calls
+                // shorten someone's pond.
+                riichiPondSnapshots[i] = [.. seats.Select(s => s.Discards.Count)];
             }
 
             observations |= Observed.OpponentRiichi | Observed.RiichiTurn;
@@ -747,6 +755,7 @@ public sealed unsafe class EmjBoardReader
         {
             riichiDeclared[i] = false;
             riichiAtIndex[i] = -1;
+            riichiPondSnapshots[i] = null;
         }
     }
 

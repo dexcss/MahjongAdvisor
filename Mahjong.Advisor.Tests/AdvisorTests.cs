@@ -172,6 +172,7 @@ public class SafetyTests
         seats[1].Discards = Build.Pond("1z2z");
         seats[1].Riichi = true;
         seats[1].RiichiDiscardIndex = 0;
+        seats[1].RiichiPondCounts = [0, 2, 1, 1];
         seats[2].Discards = Build.Pond("5m9p");
 
         var table = new TableState
@@ -628,6 +629,53 @@ public class PushFoldTests
     }
 
     [Fact]
+    public void DoubleRiichiForcesAFoldEvenWhenRiskIsPricedAtZero()
+    {
+        // The live Advanced hand: one-away against two declared riichi while
+        // fourth, discarding a live tile. Without the rail the placement EV says
+        // chase; the rail says two committed opponents is a fold.
+        var seats = Build.EmptySeats();
+        seats[1].Riichi = true;
+        seats[2].Riichi = true;
+
+        var table = new TableState
+        {
+            Hand = Tiles.Parse("3m789p1334777s111z"),
+            Seats = seats,
+            Observations = Observed.SafetyReady,
+            WallRemaining = 26,
+            Scores = [19800, 25000, 25000, 30200],
+        };
+
+        var withoutRail = new DiscardAdvisor { TwoRiichiFold = false, AverageDealInCost = 0 }
+            .Recommend(table);
+        var withRail = new DiscardAdvisor { AverageDealInCost = 0 }
+            .Recommend(table);
+
+        Assert.False(withoutRail.Folding);
+        Assert.True(withRail.Folding, "a non-tenpai hand must not race two riichi");
+    }
+
+    [Fact]
+    public void DoubleRiichiStillLetsATenpaiHandPush()
+    {
+        var seats = Build.EmptySeats();
+        seats[1].Riichi = true;
+        seats[2].Riichi = true;
+
+        var table = new TableState
+        {
+            Hand = Tiles.Parse("123456789m1122p3z"),
+            Seats = seats,
+            Observations = Observed.SafetyReady,
+            WallRemaining = 40,
+        };
+
+        var advice = new DiscardAdvisor { AverageDealInCost = 0 }.Recommend(table);
+        Assert.False(advice.Folding, "a ready hand still takes the race");
+    }
+
+    [Fact]
     public void SilentEndgamePrefersATileThatCannotDealIn()
     {
         // Same scenario at wall 20, before the hard fold arms: 1m is already in
@@ -832,6 +880,38 @@ public class ThreatModelTests
         int everyonesDiscard = table.Seats[1].Discards[0];
         var risk = Safety.EvaluateAgainstTable(everyonesDiscard, table);
         Assert.Equal(0.0, risk.DealInRate);
+    }
+
+    [Fact]
+    public void GenbutsuUsesTheDeclarationSnapshotNotPondLengths()
+    {
+        // Seat 1 riichi'd while seat 2 had four discards. Seat 2's pond then grew
+        // to six, but with calls pond lengths no longer track turns: only the
+        // last two are safe, even though a turn-count shortcut would include more.
+        var seats = Build.EmptySeats();
+        seats[1].Riichi = true;
+        seats[1].Discards = Build.Pond("1m");
+        seats[1].RiichiPondCounts = [0, 1, 4, 4];
+        seats[2].Discards = Build.Pond("1p2p3p4p7s8s");
+
+        var table = new TableState
+        {
+            Hand = Tiles.Parse("123m456p789s1122p3z"),
+            Seats = seats,
+            Observations = Observed.SafetyReady,
+            WallRemaining = 30,
+        };
+
+        var safe = table.GenbutsuAgainst(1);
+        Assert.Contains(Build.Tile("1m"), safe);      // the declarer's own pond
+        Assert.Contains(Build.Tile("7s"), safe);      // discarded after the riichi
+        Assert.Contains(Build.Tile("8s"), safe);
+        Assert.DoesNotContain(Build.Tile("1p"), safe); // discarded before it
+        Assert.DoesNotContain(Build.Tile("4p"), safe);
+
+        // A missed declaration must not invent safety: own pond only.
+        seats[1].RiichiPondCounts = null;
+        Assert.DoesNotContain(Build.Tile("7s"), table.GenbutsuAgainst(1));
     }
 }
 

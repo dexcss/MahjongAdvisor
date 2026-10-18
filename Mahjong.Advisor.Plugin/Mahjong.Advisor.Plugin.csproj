@@ -1,7 +1,7 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
 
   <PropertyGroup>
-    <Version>0.4.0.0</Version>
+    <Version>0.4.1.0</Version>
     <Authors>Akari</Authors>
     <Description>Doman Mahjong discard and call advisor with auto-play and diagnostic logging.</Description>
     <AssemblyName>Mahjong.Advisor.Plugin</AssemblyName>

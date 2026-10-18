@@ -36,6 +36,16 @@ public sealed class SeatView
     public int RiichiDiscardIndex { get; set; } = -1;
 
     /// <summary>
+    /// For a riichi seat, every seat's pond length at the moment the declaration
+    /// was first seen. A tile discarded by someone else after that point is safe
+    /// against the declarer. Pond lengths diverge as soon as anyone calls, so a
+    /// turn count derived from the declarer's own pond is not a safe substitute.
+    /// Null when the declaration was missed (for example after a reload); safety
+    /// then falls back to the declarer's own pond only.
+    /// </summary>
+    public int[]? RiichiPondCounts { get; set; }
+
+    /// <summary>
     /// Completed called sets. A meld is three tiles (chi/pon) or four (kan);
     /// integer division recovers the count from the flat tile list for every
     /// legal combination.
@@ -138,23 +148,26 @@ public sealed class TableState
     public HashSet<int> GenbutsuAgainst(int seatIndex)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(seatIndex);
-        var safe = new HashSet<int>(Seats[seatIndex].Discards);
-
         var target = Seats[seatIndex];
-        if (!target.Riichi || target.RiichiDiscardIndex < 0)
+        var safe = new HashSet<int>(target.Discards);
+
+        if (!target.Riichi)
             return safe;
 
-        // Anything anyone else has discarded since the declaration passed without
-        // a ron call, so it is dead against this seat too.
-        int turnsSince = target.Discards.Count - target.RiichiDiscardIndex;
+        // The safe window is the pond length captured when the declaration was
+        // first seen. Deriving it from the declarer's own discard count breaks
+        // as soon as anyone calls, because pond lengths stop matching turn count.
+        if (target.RiichiPondCounts is not { Length: 4 } at)
+            return safe;
+
         for (int s = 0; s < Seats.Length; s++)
         {
             if (s == seatIndex)
                 continue;
-            var other = Seats[s];
-            int from = Math.Max(0, other.Discards.Count - turnsSince);
-            for (int d = from; d < other.Discards.Count; d++)
-                safe.Add(other.Discards[d]);
+
+            int from = Math.Clamp(at[s], 0, Seats[s].Discards.Count);
+            for (int d = from; d < Seats[s].Discards.Count; d++)
+                safe.Add(Seats[s].Discards[d]);
         }
 
         return safe;

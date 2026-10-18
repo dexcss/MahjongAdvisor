@@ -31,6 +31,7 @@ public sealed class HandSimulator
     private readonly Random random;
     private readonly DiscardAdvisor advisor;
     private readonly CallAdvisor callAdvisor;
+    private readonly int[]?[] riichiPondSnapshots = new int[]?[4];
 
     /// <summary>How often a tenpai opponent declares rather than staying quiet.</summary>
     public double OpponentRiichiRate { get; init; } = 0.6;
@@ -133,6 +134,7 @@ public sealed class HandSimulator
                 {
                     riichi[turn] = true;
                     riichiAt[turn] = ponds[turn].Count;
+                    riichiPondSnapshots[turn] = [.. ponds.Select(p => p.Count)];
                 }
             }
 
@@ -217,7 +219,7 @@ public sealed class HandSimulator
         return -1;
     }
 
-    private static TableState BuildTable(
+    private TableState BuildTable(
         int[][] hands, List<int>[] ponds, List<int>[] meldTiles, int[] melds,
         bool[] riichi, int[] riichiAt, int wallLeft, int drawn)
     {
@@ -230,6 +232,7 @@ public sealed class HandSimulator
                 MeldTiles = [.. meldTiles[p]],
                 Riichi = riichi[p],
                 RiichiDiscardIndex = riichiAt[p],
+                RiichiPondCounts = riichiPondSnapshots[p],
             };
         }
 

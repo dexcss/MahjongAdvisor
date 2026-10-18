@@ -64,6 +64,13 @@ public sealed class DiscardAdvisor
     public double NotenPenaltyValue { get; init; } = 1500;
 
     /// <summary>
+    /// Two declared riichi means two opponents are committed and at least one is
+    /// very likely ready. A hand that is not tenpai takes the safest tile instead
+    /// of racing both. Live Advanced play paid 12,000 for ignoring this.
+    /// </summary>
+    public bool TwoRiichiFold { get; init; } = true;
+
+    /// <summary>
     /// How often a hand actually reaches an exhaustive draw. Measured at roughly
     /// one in six: each of four players wins about 21% of hands. Readiness only
     /// pays in that minority, and counting it every time made almost everything
@@ -285,6 +292,19 @@ public sealed class DiscardAdvisor
             && concreteThreat
             && safetyTrustworthy
             && table.WallRemaining <= LateWallThreshold
+            && reachable >= 1)
+        {
+            folding = true;
+        }
+
+        // Double riichi: two players committed, not one. A non-tenpai hand takes
+        // the safest tile regardless of placement EV - the chase multiplier must
+        // not talk the hand into feeding the second riichi as well.
+        int riichiCount = threats.Count(t => t.Riichi);
+        if (!folding
+            && TwoRiichiFold
+            && safetyTrustworthy
+            && riichiCount >= 2
             && reachable >= 1)
         {
             folding = true;
