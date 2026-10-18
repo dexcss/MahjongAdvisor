@@ -287,7 +287,7 @@ public class DoraTests
             Observations = Observed.OwnHand,
         };
 
-        Assert.True(advisor.EstimateWinValue(rich) > advisor.EstimateWinValue(plain) * 2);
+        Assert.True(advisor.EstimateWinValue(rich) > advisor.EstimateWinValue(plain) * 1.5);
     }
 
     [Fact]

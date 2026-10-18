@@ -6,7 +6,7 @@ discard by hand speed against deal-in risk. Auto-play and file logging are on by
 default in this build: sit at a casual table and it plays. Manual suggestion
 mode is one command away (`/mjadv stop`).
 
-**0.4.1.0** is the current public build. The engine and most of the reader were
+**0.4.2.0** is the current public build. The engine and most of the reader were
 played live before this version; the meld mapping, the call-prompt fixes, the
 expected-value model and the new auto-play controller still need a live pass.
 
@@ -190,12 +190,12 @@ The advisor is set to the fitted win-rate values:
 
 | Setting | Value |
 |---|---|
-| Base hand value | 1300 |
-| Caution (deal-in cost) | 5200 |
+| Base hand value | 1800 |
+| Caution (deal-in cost) | 4000 |
 | Tenpai-at-draw value | 1500 |
 | Opponent hand value | 4000 |
 
-A one-time v3 config migration resets old custom values to these. After that,
+A one-time v7 config migration resets old custom values to these. After that,
 changes made in Settings persist normally. `Reset to recommended` in Settings
 restores the same values.
 
@@ -321,10 +321,10 @@ Then:
 
 ```powershell
 git add .
-git commit -m "Mahjong Advisor v0.4.1.0"
+git commit -m "Mahjong Advisor v0.4.2.0"
 git push origin main
-git tag v0.4.1.0
-git push origin v0.4.1.0
+git tag v0.4.2.0
+git push origin v0.4.2.0
 ```
 
 CI runs the tests, builds the plugin and publishes `MahjongAdvisor.zip` on the

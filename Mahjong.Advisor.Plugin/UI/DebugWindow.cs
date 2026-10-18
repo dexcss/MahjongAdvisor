@@ -743,8 +743,8 @@ public sealed class DebugWindow : Window
 
         if (ImGui.Button("Reset to recommended"))
         {
-            config.AverageWinValue = 1300;
-            config.AverageDealInCost = 5200;
+            config.AverageWinValue = 1800;
+            config.AverageDealInCost = 4000;
             config.NotenPenaltyValue = 1500;
             config.OpponentHandValue = 4000;
             dirty = true;

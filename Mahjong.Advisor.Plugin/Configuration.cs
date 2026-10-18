@@ -7,7 +7,7 @@ namespace MahjongAdvisor;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 6;
+    public int Version { get; set; } = 7;
 
     public bool ShowOverlay { get; set; } = true;
 
@@ -60,9 +60,9 @@ public sealed class Configuration : IPluginConfiguration
     public bool LogGames { get; set; } = true;
 
     // --- advisor tuning -------------------------------------------------
-    public double AverageWinValue { get; set; } = 1300;
+    public double AverageWinValue { get; set; } = 1800;
 
-    public double AverageDealInCost { get; set; } = 5200;
+    public double AverageDealInCost { get; set; } = 4000;
 
     /// <summary>Points swing between being ready and not ready at an exhaustive draw.</summary>
     public double NotenPenaltyValue { get; set; } = 1500;
@@ -172,6 +172,18 @@ public sealed class Configuration : IPluginConfiguration
             changed = true;
         }
 
+        // v7 retunes risk appetite from match-level evaluation. Over 120 paired
+        // hanchan on identical deals, win value 1800 / deal-in cost 4000 beat
+        // 1300 / 5200 with the same deal-in rate: average place 2.55 vs 2.65,
+        // more firsts and fewer fourths.
+        if (Version < 7)
+        {
+            AverageWinValue = 1800;
+            AverageDealInCost = 4000;
+            Version = 7;
+            changed = true;
+        }
+
         var turnDelay = NormalizeDelay(
             AutoPlayTurnDelayMinMs, AutoPlayTurnDelayMaxMs, 700, 1800);
         AutoPlayTurnDelayMinMs = turnDelay.Min;
@@ -198,13 +210,13 @@ public sealed class Configuration : IPluginConfiguration
 
         if (AverageWinValue <= 0)
         {
-            AverageWinValue = 1300;
+            AverageWinValue = 1800;
             changed = true;
         }
 
         if (AverageDealInCost <= 0)
         {
-            AverageDealInCost = 5200;
+            AverageDealInCost = 4000;
             changed = true;
         }
 

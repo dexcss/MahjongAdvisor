@@ -27,7 +27,7 @@ public sealed class DiscardAdvisor
     /// Points conceded on a deal-in. Sits above a typical winning hand on purpose:
     /// dealing in also throws away whatever your own hand was worth.
     /// </summary>
-    public double AverageDealInCost { get; init; } = 5200;
+    public double AverageDealInCost { get; init; } = 4000;
 
     /// <summary>
     /// What an open hand with no dora pays. Everything else is scaled up from
@@ -35,7 +35,7 @@ public sealed class DiscardAdvisor
     /// identically -- which is what the advisor used to do.
     /// Fitted against real payouts observed in play.
     /// </summary>
-    public double AverageWinValue { get; init; } = 1300;
+    public double AverageWinValue { get; init; } = 1800;
 
     /// <summary>Each extra han multiplies the payout by roughly this much.</summary>
     public double HanMultiplier { get; init; } = 1.6;

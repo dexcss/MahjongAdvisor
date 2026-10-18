@@ -5,6 +5,125 @@ using Mahjong.Advisor.Simulator;
 int hands = args.Length > 0 && int.TryParse(args[0], out int n) ? n : 1000;
 int seed = args.Length > 1 && int.TryParse(args[1], out int s) ? s : 12345;
 
+if (args.Length > 2 && args[2] == "matchpair")
+{
+    var aggressive = new DiscardAdvisor
+    {
+        AverageDealInCost = 4000,
+        AverageWinValue = 1800,
+    };
+
+    var watch = Stopwatch.StartNew();
+    var comparison = MatchSimulator.Compare(new DiscardAdvisor(), aggressive, hands, seed);
+    Console.WriteLine(comparison);
+    Console.WriteLine($"[{watch.Elapsed.TotalSeconds:0}s]");
+    return;
+}
+
+if (args.Length > 2 && args[2] == "matchtune")
+{
+    (string Name, DiscardAdvisor Advisor)[] configs =
+    [
+        ("baseline", new DiscardAdvisor()),
+        ("deal-in 4000", new DiscardAdvisor { AverageDealInCost = 4000 }),
+        ("deal-in 7000", new DiscardAdvisor { AverageDealInCost = 7000 }),
+        ("win 1000", new DiscardAdvisor { AverageWinValue = 1000 }),
+        ("win 1800", new DiscardAdvisor { AverageWinValue = 1800 }),
+        ("noten 1000", new DiscardAdvisor { NotenPenaltyValue = 1000 }),
+        ("noten 2500", new DiscardAdvisor { NotenPenaltyValue = 2500 }),
+        ("late wall 18", new DiscardAdvisor { LateWallThreshold = 18 }),
+    ];
+
+    foreach (var (name, advisor) in configs)
+    {
+        var watch = Stopwatch.StartNew();
+        var summary = MatchSimulator.Run(advisor, hands, seed);
+        Console.WriteLine($"{name,-14} {summary}  [{watch.Elapsed.TotalSeconds:0}s]");
+    }
+
+    return;
+}
+
+if (args.Length > 2 && args[2] == "matchplace")
+{
+    var neutral = new PlacementAdjuster
+    {
+        Leading = PlacementStance.Neutral,
+        CommandingLead = PlacementStance.Neutral,
+        Trailing = PlacementStance.Neutral,
+    };
+
+    (string Name, DiscardAdvisor Advisor)[] configs =
+    [
+        ("placement on", new DiscardAdvisor()),
+        ("neutral", new DiscardAdvisor { Placement = neutral }),
+        ("mild chase", new DiscardAdvisor
+        {
+            Placement = new PlacementAdjuster
+            {
+                Trailing = new PlacementStance(Danger: 0.85, Speed: 1.05, HandValue: 1.15),
+            },
+        }),
+    ];
+
+    foreach (var (name, advisor) in configs)
+    {
+        var watch = Stopwatch.StartNew();
+        var summary = MatchSimulator.Run(advisor, hands, seed);
+        Console.WriteLine($"{name,-12} {summary}  [{watch.Elapsed.TotalSeconds:0}s]");
+    }
+
+    return;
+}
+
+if (args.Length > 2 && args[2] == "matchsweep")
+{
+    (string Name, DiscardAdvisor Advisor)[] configs =
+    [
+        ("riichi 5000", new DiscardAdvisor()),
+        ("riichi 8000", new DiscardAdvisor
+        {
+            Threats = new ThreatModel { RiichiHandValueBonus = 4000 },
+        }),
+        ("riichi 12000", new DiscardAdvisor
+        {
+            Threats = new ThreatModel { RiichiHandValueBonus = 8000 },
+        }),
+    ];
+
+    foreach (var (name, advisor) in configs)
+    {
+        var watch = Stopwatch.StartNew();
+        var summary = MatchSimulator.Run(advisor, hands, seed);
+        Console.WriteLine($"{name,-12} {summary}  [{watch.Elapsed.TotalSeconds:0}s]");
+    }
+
+    return;
+}
+
+if (args.Length > 2 && args[2] == "match")
+{
+    var watch = Stopwatch.StartNew();
+    var summary = MatchSimulator.Run(new DiscardAdvisor(), hands, seed);
+    Console.WriteLine(summary);
+    Console.WriteLine($"[{watch.Elapsed.TotalSeconds:0}s]");
+    return;
+}
+
+if (args.Length > 2 && args[2] == "riichi")
+{
+    Sweep(
+        "What a declared riichi hand is assumed to cost you:",
+        "riichi value",
+        ((int[])[1000, 4000, 8000]).Select(v =>
+            ($"{4000 + v}", new DiscardAdvisor
+            {
+                Threats = new ThreatModel { RiichiHandValueBonus = v },
+            })),
+        hands, seed);
+    return;
+}
+
 if (args.Length > 2 && args[2] == "rail")
 {
     Sweep(

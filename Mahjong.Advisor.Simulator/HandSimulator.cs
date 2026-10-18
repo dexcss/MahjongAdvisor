@@ -2,7 +2,14 @@ using Mahjong.Advisor;
 
 namespace Mahjong.Advisor.Simulator;
 
-public sealed record HandOutcome(int Winner, int DealtInBy, bool ExhaustiveDraw, int Points);
+public sealed record HandOutcome(
+    int Winner,
+    int DealtInBy,
+    bool ExhaustiveDraw,
+    HandValueResult? WinValue,
+    bool Tsumo,
+    bool[] RiichiSeats,
+    bool[] TenpaiSeats);
 
 public sealed record RunResult(
     int Hands,
@@ -47,8 +54,17 @@ public sealed class HandSimulator
         random = new Random(seed);
     }
 
-    public HandOutcome PlayHand()
+    /// <summary>The live match scores, so placement stance matches the real game.</summary>
+    private int[] currentScores = [25000, 25000, 25000, 25000];
+
+    public HandOutcome PlayHand(int dealerSeat = 0, int[]? scores = null)
     {
+        currentScores = scores is { Length: 4 }
+            ? [.. scores]
+            : [25000, 25000, 25000, 25000];
+
+        Array.Clear(riichiPondSnapshots);
+
         var wall = BuildWall();
         int next = 0;
 
@@ -73,7 +89,7 @@ public sealed class HandSimulator
         var riichiAt = new int[4];
         Array.Fill(riichiAt, -1);
 
-        int turn = 0;
+        int turn = dealerSeat;
         int lastDrawn = -1;
         bool skipDraw = false;
 
@@ -84,14 +100,18 @@ public sealed class HandSimulator
                 lastDrawn = wall[next++];
                 hands[turn][lastDrawn]++;
 
-                if (Shanten.Calculate(hands[turn], melds[turn]) < 0
-                    && CanWin(hands[turn], meldTiles[turn], riichi[turn], lastDrawn, tsumo: true))
+                if (Shanten.Calculate(hands[turn], melds[turn]) < 0)
                 {
-                    return new HandOutcome(
-                        turn,
-                        -1,
-                        false,
-                        Value(hands[turn], meldTiles[turn], riichi[turn], lastDrawn, tsumo: true));
+                    var winValue = EvaluateWin(
+                        hands[turn], meldTiles[turn], riichi[turn], lastDrawn,
+                        tsumo: true, winnerSeat: turn, dealerSeat: dealerSeat);
+
+                    if (winValue is not null)
+                    {
+                        return new HandOutcome(
+                            turn, -1, false, winValue, true,
+                            [.. riichi], new bool[4]);
+                    }
                 }
             }
 
@@ -148,14 +168,20 @@ public sealed class HandSimulator
                     continue;
 
                 hands[q][discard]++;
-                bool wins = Shanten.Calculate(hands[q], melds[q]) < 0
-                    && CanWin(hands[q], meldTiles[q], riichi[q], discard, tsumo: false);
-
-                if (wins)
+                HandValueResult? winValue = null;
+                if (Shanten.Calculate(hands[q], melds[q]) < 0)
                 {
-                    int points = Value(hands[q], meldTiles[q], riichi[q], discard, tsumo: false);
+                    winValue = EvaluateWin(
+                        hands[q], meldTiles[q], riichi[q], discard,
+                        tsumo: false, winnerSeat: q, dealerSeat: dealerSeat);
+                }
+
+                if (winValue is not null)
+                {
                     hands[q][discard]--;
-                    return new HandOutcome(q, turn, false, points);
+                    return new HandOutcome(
+                        q, turn, false, winValue, false,
+                        [.. riichi], new bool[4]);
                 }
 
                 hands[q][discard]--;
@@ -179,8 +205,11 @@ public sealed class HandSimulator
             turn = (turn + 1) % 4;
         }
 
-        bool ready = Shanten.Calculate(hands[0], melds[0]) == 0;
-        return new HandOutcome(-1, -1, true, ready ? 1500 : -1500);
+        var tenpai = new bool[4];
+        for (int p = 0; p < 4; p++)
+            tenpai[p] = Shanten.Calculate(hands[p], melds[p]) == 0;
+
+        return new HandOutcome(-1, -1, true, null, false, [.. riichi], tenpai);
     }
 
     /// <summary>Whoever claims the tile, ourselves included.</summary>
@@ -244,7 +273,7 @@ public sealed class HandSimulator
             Observations = Observed.OwnHand | Observed.Discards | Observed.OpponentMelds
                 | Observed.OpponentRiichi | Observed.RiichiTurn,
             WallRemaining = Math.Max(0, wallLeft),
-            Scores = [25000, 25000, 25000, 25000],
+            Scores = [.. currentScores],
             DrawnTile = drawn,
         };
     }
@@ -290,65 +319,28 @@ public sealed class HandSimulator
     /// Whether a complete hand is actually allowed to win. A closed hand almost
     /// always has something — riichi, self-draw, all-simples, pinfu. An open one
     /// needs a real pattern, which is what stops indiscriminate calling.
-    /// </summary>
     /// <summary>
-    /// Exact win legality: yaku, fu and dora are computed here too. A closed
+    /// Exact win legality and scoring: yaku, fu, dora and payments. A closed
     /// ron with no yaku is not a win; menzen tsumo and riichi both qualify.
     /// </summary>
-    private static bool CanWin(
+    private static HandValueResult? EvaluateWin(
         int[] concealed,
         List<int> meldTiles,
         bool riichi,
         int winTile,
-        bool tsumo)
+        bool tsumo,
+        int winnerSeat,
+        int dealerSeat)
     {
-        var value = HandValue.Evaluate(new HandValueRequest
+        return HandValue.Evaluate(new HandValueRequest
         {
             Concealed = concealed,
             Melds = HandValue.ParseMelds(meldTiles),
             Method = tsumo ? WinMethod.Tsumo : WinMethod.Ron,
             WinningTile = winTile,
             Riichi = riichi,
+            Dealer = winnerSeat == dealerSeat,
         });
-
-        return value is not null;
-    }
-
-    private static int Value(
-        int[] hand,
-        List<int> meldTiles,
-        bool riichi,
-        int winTile,
-        bool tsumo)
-    {
-        var value = HandValue.Evaluate(new HandValueRequest
-        {
-            Concealed = hand,
-            Melds = HandValue.ParseMelds(meldTiles),
-            Method = tsumo ? WinMethod.Tsumo : WinMethod.Ron,
-            WinningTile = winTile,
-            Riichi = riichi,
-        });
-
-        if (value is not null)
-            return value.TotalPoints(tsumo ? WinMethod.Tsumo : WinMethod.Ron);
-
-        // Should be unreachable once CanWin agrees, but never lose an outcome to
-        // a scoring gap: fall back to the old shape value.
-        int triplets = 0;
-        for (int t = 0; t < Tiles.Kinds; t++)
-        {
-            if (hand[t] >= 3)
-                triplets++;
-        }
-
-        int points = 2600 + (triplets * 1200);
-        if (riichi)
-            points = (int)(points * 1.8);
-        if (meldTiles.Count > 0)
-            points = (int)(points * 0.7);
-
-        return Math.Clamp(points, 1000, 12000);
     }
 
     private List<int> BuildWall()
@@ -380,14 +372,17 @@ public sealed class HandSimulator
         // of thread scheduling.
         Parallel.For(0, hands, i =>
         {
-            var outcome = new HandSimulator(advisor, seed + i).PlayHand();
+            // Rotate the dealer so the hand-level sweeps are not all played from
+            // the dealer seat; payments and the first draw both depend on it.
+            var outcome = new HandSimulator(advisor, seed + i).PlayHand(i % 4);
 
             lock (gate)
             {
                 if (outcome.Winner == 0)
                 {
                     wins++;
-                    points += outcome.Points;
+                    points += outcome.WinValue!.TotalPoints(
+                        outcome.Tsumo ? WinMethod.Tsumo : WinMethod.Ron);
                 }
                 else if (outcome.Winner > 0)
                 {
@@ -395,13 +390,13 @@ public sealed class HandSimulator
                     if (outcome.DealtInBy == 0)
                     {
                         dealIns++;
-                        points -= outcome.Points;
+                        points -= outcome.WinValue!.RonPoints;
                     }
                 }
                 else if (outcome.ExhaustiveDraw)
                 {
                     draws++;
-                    points += outcome.Points;
+                    points += outcome.TenpaiSeats[0] ? 1500 : -1500;
                 }
 
                 done++;
