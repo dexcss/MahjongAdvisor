@@ -608,6 +608,50 @@ public class PushFoldTests
 
         Assert.False(new DiscardAdvisor().Recommend(table).Folding);
     }
+
+    [Fact]
+    public void SilentLateWallFoldsWhenNotTenpai()
+    {
+        // The live 4,200 deal-in: one-away with 6-9 tiles accepted, wall running
+        // out, and every opponent silent. No riichi and no melds used to mean the
+        // threat model saw nothing and the hand pushed live tiles to the end.
+        var table = new TableState
+        {
+            Hand = Tiles.Parse("119m2467p13579s55z"),
+            Seats = Build.EmptySeats(),
+            Observations = Observed.SafetyReady,
+            WallRemaining = 12,
+        };
+
+        var advice = new DiscardAdvisor().Recommend(table);
+        Assert.True(advice.Folding, "a not-tenpai hand must fold a silent endgame");
+    }
+
+    [Fact]
+    public void SilentEndgamePrefersATileThatCannotDealIn()
+    {
+        // Same scenario at wall 20, before the hard fold arms: 1m is already in
+        // every opponent's pond, so it cannot deal in, and it should outrank the
+        // live middle tiles that dealt 4,200 in the live match. It has to be in
+        // all three ponds - with the silent floor, every seat is a threat.
+        var seats = Build.EmptySeats();
+        for (int seat = 1; seat < 4; seat++)
+            seats[seat].Discards = Build.Pond("1m");
+
+        var table = new TableState
+        {
+            Hand = Tiles.Parse("119m2467p13579s55z"),
+            Seats = seats,
+            Observations = Observed.SafetyReady,
+            WallRemaining = 20,
+        };
+
+        var advice = new DiscardAdvisor().Recommend(table);
+        Assert.NotNull(advice.Best);
+        Assert.True(
+            advice.Best!.Risk.DealInRate <= 0.0,
+            $"the endgame discard should be unable to deal in, chose {Tiles.Name(advice.Best.Tile)} at {advice.Best.Risk.DealInRate:P1}");
+    }
 }
 
 public class PlacementTests
@@ -745,6 +789,26 @@ public class ThreatModelTests
             .TenpaiProbability;
 
         Assert.True(unknown > known);
+    }
+
+    [Fact]
+    public void SilentSeatsFloorAsTheWallEmpties()
+    {
+        // The measured damaten curve tops out at 19%, which on a quiet NPC table
+        // left the whole safety model reading zero: no riichi and no melds meant
+        // nobody was ever a concrete threat, so the late-wall rules never armed
+        // and live tiles got pushed one-away into damaten. The floor rises from
+        // zero at wall 32 to a concrete threat at wall 16.
+        Assert.Equal(0.0, ThreatModel.SilentReadyFloor(32));
+        Assert.Equal(0.0, ThreatModel.SilentReadyFloor(70));
+        Assert.Equal(0.7, ThreatModel.SilentReadyFloor(16));
+        Assert.Equal(0.7, ThreatModel.SilentReadyFloor(4));
+        Assert.InRange(ThreatModel.SilentReadyFloor(24), 0.3, 0.4);
+
+        double silent = new ThreatModel().Evaluate(Late(15))
+            .Single(t => t.Seat == 1)
+            .TenpaiProbability;
+        Assert.True(silent >= 0.7, $"a silent seat at wall 10 read {silent:P0}; that is a concrete threat");
     }
 
     [Fact]

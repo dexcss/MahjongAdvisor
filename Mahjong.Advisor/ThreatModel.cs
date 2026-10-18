@@ -51,6 +51,30 @@ public sealed class ThreatModel
     /// <summary>Each dora visible in an opponent's melds is another han for them.</summary>
     public double PerVisibleDora { get; init; } = 1500;
 
+    /// <summary>
+    /// Readiness credited to a silent seat as the wall empties, regardless of
+    /// evidence. The measured damaten curve tops out at 19% on turn 16, which
+    /// comes from human lobbies; on these NPC tables silent hands complete big
+    /// and often - three mangan-or-better completions in one match were all
+    /// silent. Without a floor a quiet table reads as nearly harmless: topThreat
+    /// never crosses the concrete-threat level, the late-wall fold never arms,
+    /// and live non-suji tiles get pushed one-away at wall 20 into damaten.
+    /// The floor stays at zero until wall 32, then rises to a concrete threat
+    /// (0.7) at wall 16, where the existing late-wall rules take over.
+    /// </summary>
+    public static double SilentReadyFloor(int wallRemaining)
+    {
+        if (wallRemaining >= 32)
+            return 0.0;
+        if (wallRemaining <= 16)
+            return ConcreteFloor;
+
+        return ConcreteFloor * (32 - wallRemaining) / 16.0;
+    }
+
+    /// <summary>Matches DiscardAdvisor.ConcreteThreatLevel so the late-wall rules arm.</summary>
+    public const double ConcreteFloor = 0.7;
+
     /// <summary>Seats 1-3, i.e. everyone but us.</summary>
     public List<SeatThreat> Evaluate(TableState table)
     {
@@ -59,6 +83,7 @@ public sealed class ThreatModel
         var threats = new List<SeatThreat>(3);
         int turn = HououTables.TurnFromWall(table.WallRemaining);
         bool meldsKnown = table.Observations.HasFlag(Observed.OpponentMelds);
+        double silentFloor = SilentReadyFloor(table.WallRemaining);
 
         var doraTiles = new HashSet<int>();
         foreach (int indicator in table.DoraIndicators)
@@ -72,13 +97,18 @@ public sealed class ThreatModel
             // turn 8 is 53% likely tenpai, while a quiet closed hand is only 4%.
             // Without meld data, use the quiet-hand rate as a floor and add a
             // fraction of the one-call rate, rather than pretending nobody called.
-            double probability = view.Riichi
+            // Late in the hand the silent-ready floor takes over: no signal is
+            // not evidence of safety.
+            double measured = view.Riichi
                 ? 1.0
                 : meldsKnown
                     ? HououTables.TenpaiChance(view.MeldCount, turn)
                     : Math.Max(
                         HououTables.TenpaiChance(0, turn),
                         UnknownMeldPrior * HououTables.TenpaiChance(1, turn));
+            double probability = view.Riichi
+                ? 1.0
+                : Math.Max(measured, silentFloor);
 
             int visibleDora = view.MeldTiles.Count(doraTiles.Contains);
             double value = BaseHandValue
