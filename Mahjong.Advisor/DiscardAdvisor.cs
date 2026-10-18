@@ -183,6 +183,19 @@ public sealed class DiscardAdvisor
         if (concreteThreat && reachable >= FarShantenVeto)
             folding = true;
 
+        // Late wall: with the draw nearly gone, a hand that is still not tenpai
+        // cannot win before the exhaustive draw, so the only question is deal-in
+        // risk. Pushing a 1-shanten no-riichi hand here dealt 12,000 in a live
+        // game (it started folding three discards too late).
+        if (!folding
+            && concreteThreat
+            && safetyTrustworthy
+            && table.WallRemaining <= LateWallThreshold
+            && reachable >= 1)
+        {
+            folding = true;
+        }
+
         if (concreteThreat && !folding)
         {
             // Every push is worse than sitting out: fold. The EV already carries

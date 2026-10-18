@@ -88,6 +88,16 @@ public static class DiagnosticBundle
                 {
                     AddFile(zip, $"logs/{Path.GetFileName(file)}", file);
                 }
+
+                // Chi shape-picker dumps: raw AtkValues + tile layout captured
+                // the first time the picker appears in a session.
+                foreach (string file in Directory
+                             .EnumerateFiles(logDirectory, "chi-picker-*.txt")
+                             .OrderByDescending(File.GetLastWriteTimeUtc)
+                             .Take(5))
+                {
+                    AddFile(zip, $"logs/{Path.GetFileName(file)}", file);
+                }
             }
 
             AddText(zip, "dalamud-tail.txt", ReadDalamudTail());
