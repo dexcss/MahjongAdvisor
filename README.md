@@ -6,7 +6,7 @@ discard by hand speed against deal-in risk. Auto-play and file logging are on by
 default in this build: sit at a casual table and it plays. Manual suggestion
 mode is one command away (`/mjadv stop`).
 
-**0.3.5.0** is the current public build. The engine and most of the reader were
+**0.3.6.0** is the current public build. The engine and most of the reader were
 played live before this version; the meld mapping, the call-prompt fixes, the
 expected-value model and the new auto-play controller still need a live pass.
 
@@ -287,10 +287,10 @@ Then:
 
 ```powershell
 git add .
-git commit -m "Mahjong Advisor v0.3.5.0"
+git commit -m "Mahjong Advisor v0.3.6.0"
 git push origin main
-git tag v0.3.5.0
-git push origin v0.3.5.0
+git tag v0.3.6.0
+git push origin v0.3.6.0
 ```
 
 CI runs the tests, builds the plugin and publishes `MahjongAdvisor.zip` on the

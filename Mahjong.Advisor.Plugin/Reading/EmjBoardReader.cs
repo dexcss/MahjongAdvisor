@@ -443,26 +443,29 @@ public sealed unsafe class EmjBoardReader
         bool meldsRead = false;
         if (profile.HasMeldNodes)
         {
-            bool allRead = true;
+            // Read each seat independently. A hidden empty strip is normal when
+            // that seat has not called; requiring all four strips at once meant
+            // one quiet opponent suppressed every visible meld on the table.
+            bool anyRead = false;
             for (int seat = 0; seat < 4; seat++)
             {
                 var melds = inspector.ReadTileContainers(
                     unit, profile.MeldNodeIdsForSeat(seat), textureBase);
 
-                // A missing container means unknown, not empty. Counts of 1, 2 or
-                // 5 cannot be a legal set of called melds, so reject them too.
                 if (melds is null || !IsPlausibleMeldCount(melds.Count))
                 {
-                    allRead = false;
-                    break;
+                    seats[seat].MeldTiles = [];
+                    continue;
                 }
 
+                anyRead = true;
                 seats[seat].MeldTiles = melds.Select(m => m.Tile).ToList();
             }
 
             // Our own meld count is known from the hand shape. Use it to validate
-            // the mapping before trusting any of the four seats.
-            if (allRead && SelfMeldCountMatches(seats[0].MeldTiles.Count, calledMelds))
+            // the mapping before trusting the seat data. If our own strip cannot
+            // be read, the hand-delta fallback below still covers it.
+            if (anyRead && SelfMeldCountMatches(seats[0].MeldTiles.Count, calledMelds))
             {
                 observations |= Observed.OpponentMelds;
                 meldsRead = true;
