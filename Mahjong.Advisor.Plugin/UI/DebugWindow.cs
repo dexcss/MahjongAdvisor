@@ -364,7 +364,7 @@ public sealed class DebugWindow : Window
         }
 
         bool chi = config.AutoPlayAllowChi;
-        if (ImGui.Checkbox("Take chi (experimental)", ref chi))
+        if (ImGui.Checkbox("Automatically call and pick chi", ref chi))
         {
             config.AutoPlayAllowChi = chi;
             settingsDirty = true;
@@ -372,8 +372,9 @@ public sealed class DebugWindow : Window
         if (ImGui.IsItemHovered())
         {
             ImGui.SetTooltip(
-                "The chi shape picker is not mapped. If chi is enabled, auto-play "
-                + "pauses on that screen and waits for you to choose the shape.");
+                "Chi is automated: the controller calls it when the advisor likes it and "
+                + "picks the first shape the client offers. Picker layouts are dumped to "
+                + "the log folder so shape selection can be refined later.");
         }
 
         bool kan = config.AutoPlayAllowKan;

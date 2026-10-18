@@ -71,6 +71,7 @@ public sealed unsafe class AutoPlayController
     private const int PopupRetryDelayMs = 700;
     private const int MaxPopupAttempts = 4;
     private const int StuckWarnMs = 12000;
+    private const int ChiPickDelayMs = 600;
 
     private readonly Plugin plugin;
     private readonly Random rng = new();
@@ -90,7 +91,10 @@ public sealed unsafe class AutoPlayController
     private int riichiDiscardTile = -1;
     private int popupAttempts;
     private bool stuckWarned;
-    private bool chiSuspended;
+    private bool chiPickPending;
+    private int chiPickAttempts;
+    private long chiPickAt;
+    private bool chiPickerDumped;
 
     public AutoPlayController(Plugin plugin)
     {
@@ -164,25 +168,12 @@ public sealed unsafe class AutoPlayController
         var profile = read.Profile;
         int state = read.StateCode;
 
-        // The chi shape picker has no verified option mapping. If the user opted
-        // into chi, stop and let them choose the shape rather than guessing.
-        if (chiSuspended)
-        {
-            if (state == profile.StateCodes.ChiVariantSelect)
-            {
-                LastStatus = "chi shape: choose manually";
-                return;
-            }
-
-            chiSuspended = false;
-        }
-
+        // The chi shape picker: after firing chi, the client may ask which
+        // variant to take. Pick the first option; the controller re-evaluates
+        // the hand afterwards, so any variant keeps the game moving.
         if (state == profile.StateCodes.ChiVariantSelect)
         {
-            chiSuspended = true;
-            LastStatus = "chi shape: choose manually";
-            Log("chi variant selection is not automated; choose the shape manually. "
-                + "Auto-play resumes after the prompt closes.");
+            HandleChiPicker(profile, now);
             return;
         }
 
@@ -202,6 +193,7 @@ public sealed unsafe class AutoPlayController
             riichiDiscardPending = false;
             riichiDiscardTile = -1;
             popupAttempts = 0;
+            chiPickAttempts = 0;
             actAt = now + DelayFor(state, profile, config);
             stateSince = now;
             stuckWarned = false;
@@ -280,6 +272,101 @@ public sealed unsafe class AutoPlayController
         }
     }
 
+    /// <summary>
+    /// Handles the chi shape-selection surface. The controller fires the first
+    /// option the client offers; any chi variant completes the call, and the
+    /// discard advisor re-evaluates the modified hand afterwards. The picker's
+    /// raw layout is dumped once per session so the shape choice can be refined
+    /// against real captures later.
+    /// </summary>
+    private void HandleChiPicker(LayoutProfile profile, long now)
+    {
+        if (!chiPickerDumped)
+        {
+            chiPickerDumped = true;
+            DumpChiPicker();
+        }
+
+        if (!chiPickPending)
+        {
+            chiPickPending = true;
+            chiPickAttempts = 0;
+            chiPickAt = now + ChiPickDelayMs;
+            LastStatus = "chi shape picker";
+            return;
+        }
+
+        if (now < chiPickAt)
+        {
+            LastStatus = "chi shape picker (waiting)";
+            return;
+        }
+
+        if (chiPickAttempts >= MaxPopupAttempts)
+        {
+            acted = true;
+            LastStatus = "chi picker stalled";
+            Log("chi picker: no acceptance after "
+                + $"{chiPickAttempts} attempts; yielding to the game timer");
+            return;
+        }
+
+        if (FireCall(0))
+        {
+            chiPickAttempts++;
+            if (chiPickAttempts == 1)
+                RecordAction(AutoActionKind.Call, "picked chi shape");
+
+            LastStatus = "chi shape picked";
+            chiPickAt = Environment.TickCount64 + PopupRetryDelayMs;
+        }
+    }
+
+    /// <summary>Writes the chi picker's AtkValues and tile layout for offline mapping.</summary>
+    private void DumpChiPicker()
+    {
+        try
+        {
+            var unit = plugin.Reader.TryGetAddon(out var profile);
+            if (unit is null || profile is null)
+                return;
+
+            string dir = Path.Combine(
+                Plugin.PluginInterface.GetPluginConfigDirectory(), "logs");
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, $"chi-picker-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+
+            var lines = new List<string> { $"state={ReadState(unit, profile)}" };
+
+            if (unit->AtkValues is not null)
+            {
+                for (int i = 0; i < unit->AtkValuesCount; i++)
+                {
+                    var value = unit->AtkValues[i];
+                    string extra = "";
+                    if (value.Type is ValueType.String or ValueType.ConstString or ValueType.ManagedString
+                        && value.String.Value is not null)
+                    {
+                        extra = $" '{value.String.ToString()}'";
+                    }
+
+                    lines.Add($"atk[{i}] {value.Type}={value.Int}{extra}");
+                }
+            }
+
+            lines.Add("-- tiles (name, x, y, rotation, ancestry) --");
+            plugin.NodeInspector.BeginRead(unit, profile.TileTextureBase);
+            lines.AddRange(plugin.NodeInspector.DumpGeometry(unit, profile.TileTextureBase));
+
+            File.WriteAllLines(path, lines);
+            Log($"chi picker dump: {path}");
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Error(ex, "[MahjongAdvisor][auto] chi picker dump failed");
+        }
+    }
+
     private void DoTurn(
         BoardRead read,
         CallPrompt prompt,
@@ -289,6 +376,11 @@ public sealed unsafe class AutoPlayController
         bool afterCall)
     {
         var table = read.Table!;
+
+        // If we called chi and the client completed it without a picker, the
+        // pending pick is moot; the discard below is a normal turn again.
+        chiPickPending = false;
+
         int expected = 14 - (table.CalledMelds * 3);
         if (Tiles.Total(table.Hand) != expected)
         {
@@ -546,7 +638,14 @@ public sealed unsafe class AutoPlayController
             _ => AutoActionKind.Pass,
         };
 
-        FirePopup(option, kind == CallKind.Pass ? "pass" : kind.ToString(), action);
+        bool fired = FirePopup(option, kind == CallKind.Pass ? "pass" : kind.ToString(), action);
+        if (fired && kind == CallKind.Chi)
+        {
+            // The client may show the shape-selection surface next; the picker
+            // handler takes over from there.
+            chiPickPending = true;
+            chiPickAt = Environment.TickCount64 + ChiPickDelayMs;
+        }
     }
 
     /// <summary>
@@ -778,7 +877,7 @@ public sealed unsafe class AutoPlayController
             return false;
 
         int state = ReadState(unit, profile);
-        if (state is not (6 or 15 or 30))
+        if (state is not (6 or 15 or 25 or 30))
         {
             Log($"call: not a call/self-action state (state {state})");
             return false;
@@ -879,7 +978,8 @@ public sealed unsafe class AutoPlayController
             || state == codes.OurTurnDiscard
             || state == codes.SelfDeclareList
             || state == codes.CallPromptList
-            || state == codes.RiichiDiscard;
+            || state == codes.RiichiDiscard
+            || state == codes.ChiVariantSelect;
     }
 
     private void RecordAction(AutoActionKind kind, string label)
@@ -907,7 +1007,10 @@ public sealed unsafe class AutoPlayController
         riichiDiscardTile = -1;
         popupAttempts = 0;
         stuckWarned = false;
-        chiSuspended = false;
+        chiPickPending = false;
+        chiPickAttempts = 0;
+        chiPickAt = 0;
+        chiPickerDumped = false;
     }
 
     private static void Log(string message) =>

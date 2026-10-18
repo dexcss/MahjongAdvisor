@@ -7,7 +7,7 @@ namespace MahjongAdvisor;
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 5;
+    public int Version { get; set; } = 6;
 
     public bool ShowOverlay { get; set; } = true;
 
@@ -30,8 +30,8 @@ public sealed class Configuration : IPluginConfiguration
     /// verified `[11, option]` press and our CallAdvisor already weighs the yaku.</summary>
     public bool AutoPlayAllowPon { get; set; } = true;
 
-    /// <summary>Chi requires the variant-selection surface, which is not verified.</summary>
-    public bool AutoPlayAllowChi { get; set; }
+    /// <summary>Chi is automated: the controller calls it when best and picks the first shape the client offers.</summary>
+    public bool AutoPlayAllowChi { get; set; } = true;
 
     /// <summary>A kan flips another dora indicator for every seat; opt in only.</summary>
     public bool AutoPlayAllowKan { get; set; }
@@ -130,6 +130,15 @@ public sealed class Configuration : IPluginConfiguration
             AutoPlay = true;
             LogGames = true;
             Version = 5;
+            changed = true;
+        }
+
+        // v6 turns chi on: the controller now handles the shape-selection
+        // surface by picking the first variant, so it no longer needs a human.
+        if (Version < 6)
+        {
+            AutoPlayAllowChi = true;
+            Version = 6;
             changed = true;
         }
 

@@ -6,7 +6,7 @@ discard by hand speed against deal-in risk. Auto-play and file logging are on by
 default in this build: sit at a casual table and it plays. Manual suggestion
 mode is one command away (`/mjadv stop`).
 
-**0.3.6.0** is the current public build. The engine and most of the reader were
+**0.3.7.0** is the current public build. The engine and most of the reader were
 played live before this version; the meld mapping, the call-prompt fixes, the
 expected-value model and the new auto-play controller still need a live pass.
 
@@ -141,11 +141,13 @@ Defaults are conservative:
 - **Pon**: taken when the advisor says it is worth opening the hand.
 - **Ron / tsumo**: always taken.
 - **Riichi**: declared when the advisor says it is the best line.
-- **Chi**: off. The shape-picker surface is not verified; if you enable it, the
-  controller stops at the shape picker and asks you to choose manually.
+- **Chi**: automated. The controller calls it when the advisor ranks it best
+  and, if the shape-selection surface appears, fires the first variant and
+  re-evaluates the hand. The picker layout is dumped once per session to the
+  log folder so shape-specific selection can be refined later.
 - **Kan**: off. A kan flips another dora indicator for every seat.
-- A self-kan prompt that the advisor declines is answered with Pass so it cannot
-  block the discard surface.
+- A self-kan prompt that the advisor declines is answered by discarding, which
+  the client accepts; firing the Pass callback there does nothing.
 - Nine-terminals/honours is aborted unless the hand is a real kokushi attempt
   (thirteen-orphans shanten 2 or better).
 
@@ -287,10 +289,10 @@ Then:
 
 ```powershell
 git add .
-git commit -m "Mahjong Advisor v0.3.6.0"
+git commit -m "Mahjong Advisor v0.3.7.0"
 git push origin main
-git tag v0.3.6.0
-git push origin v0.3.6.0
+git tag v0.3.7.0
+git push origin v0.3.7.0
 ```
 
 CI runs the tests, builds the plugin and publishes `MahjongAdvisor.zip` on the
