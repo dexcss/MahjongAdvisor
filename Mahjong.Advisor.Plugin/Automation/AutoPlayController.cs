@@ -601,11 +601,26 @@ public sealed unsafe class AutoPlayController
 
         var config = plugin.Configuration;
         CallKind kind = callAdvice?.Best?.Kind ?? CallKind.Pass;
+        string passLabel = "pass";
 
         if (kind == CallKind.Pon && !config.AutoPlayAllowPon)
             kind = CallKind.Pass;
         if (kind == CallKind.Chi && !config.AutoPlayAllowChi)
             kind = CallKind.Pass;
+        if (kind == CallKind.Chi)
+        {
+            // The shape-selection dialog (state 25) ignores [11,n] call picks —
+            // the picker dump confirms it is its own multi-variant surface. A
+            // single-shape chi completes straight through with no picker, so
+            // only fire those; multi-shape chi passes instead of stalling.
+            int chiShapes = callAdvice?.Options.Count(o => o.Kind == CallKind.Chi) ?? 0;
+            if (chiShapes != 1)
+            {
+                passLabel = $"pass ({chiShapes} chi shapes)";
+                Log($"chi: {chiShapes} shapes would open the picker; passing");
+                kind = CallKind.Pass;
+            }
+        }
         if (kind == CallKind.Kan && !config.AutoPlayAllowKan)
             kind = CallKind.Pass;
 
@@ -638,7 +653,7 @@ public sealed unsafe class AutoPlayController
             _ => AutoActionKind.Pass,
         };
 
-        bool fired = FirePopup(option, kind == CallKind.Pass ? "pass" : kind.ToString(), action);
+        bool fired = FirePopup(option, kind == CallKind.Pass ? passLabel : kind.ToString(), action);
         if (fired && kind == CallKind.Chi)
         {
             // The client may show the shape-selection surface next; the picker

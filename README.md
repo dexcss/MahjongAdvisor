@@ -6,7 +6,7 @@ discard by hand speed against deal-in risk. Auto-play and file logging are on by
 default in this build: sit at a casual table and it plays. Manual suggestion
 mode is one command away (`/mjadv stop`).
 
-**0.3.8.0** is the current public build. The engine and most of the reader were
+**0.3.9.0** is the current public build. The engine and most of the reader were
 played live before this version; the meld mapping, the call-prompt fixes, the
 expected-value model and the new auto-play controller still need a live pass.
 
@@ -144,10 +144,13 @@ Defaults are conservative:
 - **Pon**: taken when the advisor says it is worth opening the hand.
 - **Ron / tsumo**: always taken.
 - **Riichi**: declared when the advisor says it is the best line.
-- **Chi**: automated. The controller calls it when the advisor ranks it best
-  and, if the shape-selection surface appears, fires the first variant and
-  re-evaluates the hand. The picker layout is dumped once per session to the
-  log folder so shape-specific selection can be refined later.
+- **Chi**: automated for single-shape calls. The controller calls chi when the
+  advisor ranks it best and exactly one run shape is possible — that path
+  completes with no dialog. When two or three shapes are possible the client
+  opens its shape-selection surface, which ignores scripted call picks (the
+  first picker dump proves it), so the controller passes instead and logs how
+  many shapes it declined. The picker layout is still dumped once per session
+  so shape-specific selection can be built later.
 - **Kan**: off. A kan flips another dora indicator for every seat.
 - A self-kan prompt that the advisor declines is answered by discarding, which
   the client accepts; firing the Pass callback there does nothing.
@@ -292,10 +295,10 @@ Then:
 
 ```powershell
 git add .
-git commit -m "Mahjong Advisor v0.3.8.0"
+git commit -m "Mahjong Advisor v0.3.9.0"
 git push origin main
-git tag v0.3.8.0
-git push origin v0.3.8.0
+git tag v0.3.9.0
+git push origin v0.3.9.0
 ```
 
 CI runs the tests, builds the plugin and publishes `MahjongAdvisor.zip` on the
