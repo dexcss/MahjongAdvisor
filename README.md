@@ -6,7 +6,7 @@ discard by hand speed against deal-in risk. Auto-play and file logging are on by
 default in this build: sit at a casual table and it plays. Manual suggestion
 mode is one command away (`/mjadv stop`).
 
-**0.4.2.0** is the current public build. The engine and most of the reader were
+**0.4.3.0** is the current public build. The engine and most of the reader were
 played live before this version; the meld mapping, the call-prompt fixes, the
 expected-value model and the new auto-play controller still need a live pass.
 
@@ -138,6 +138,11 @@ logged games:
   shortcut could mark a tile discarded before the riichi as safe.
 - **Double-riichi rail.** Two declared riichi and a hand that is not tenpai
   means fold, regardless of placement EV.
+- **Result-screen advances retry.** The result panel can swallow the first
+  advance callback while it animates. The controller retries every 2.5 seconds
+  until the state changes (capped at eight attempts, so the deliberately manual
+  match-end screen is not spammed). A swallowed callback used to leave the
+  screen up indefinitely.
 - A **self-kan bar** (`Kan / Pass` at state 6) is ignored. The client does not
   accept the Pass callback there; the bot just discards normally, which
   declines the kan. Firing Pass four times was the freeze in the first
@@ -321,10 +326,10 @@ Then:
 
 ```powershell
 git add .
-git commit -m "Mahjong Advisor v0.4.2.0"
+git commit -m "Mahjong Advisor v0.4.3.0"
 git push origin main
-git tag v0.4.2.0
-git push origin v0.4.2.0
+git tag v0.4.3.0
+git push origin v0.4.3.0
 ```
 
 CI runs the tests, builds the plugin and publishes `MahjongAdvisor.zip` on the

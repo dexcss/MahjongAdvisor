@@ -73,6 +73,12 @@ public sealed unsafe class AutoPlayController
     private const int StuckWarnMs = 12000;
     private const int ChiPickDelayMs = 600;
 
+    /// <summary>Retry a result-screen advance this often until it takes.</summary>
+    private const int ResultRetryMs = 2500;
+
+    /// <summary>Enough to dismiss an inter-hand panel; a match-end screen just ignores them.</summary>
+    private const int MaxResultAttempts = 8;
+
     private readonly Plugin plugin;
     private readonly Random rng = new();
 
@@ -85,6 +91,8 @@ public sealed unsafe class AutoPlayController
     private string lastPromptKey = "";
     private long stateSince;
     private long actAt;
+    private long resultRetryAt;
+    private int resultAttempts;
     private bool acted;
     private bool riichiFired;
     private bool riichiDiscardPending;
@@ -194,6 +202,8 @@ public sealed unsafe class AutoPlayController
             riichiDiscardTile = -1;
             popupAttempts = 0;
             chiPickAttempts = 0;
+            resultAttempts = 0;
+            resultRetryAt = 0;
             actAt = now + DelayFor(state, profile, config);
             stateSince = now;
             stuckWarned = false;
@@ -216,13 +226,35 @@ public sealed unsafe class AutoPlayController
                 + $"(acted={acted}, attempts={popupAttempts})");
         }
 
-        if (acted || now < actAt)
+        bool resultState = state == profile.StateCodes.HandResult
+            || state == profile.StateCodes.EndOfHand;
+
+        // The game occasionally swallows an advance while the result panel is
+        // still animating. Retrying while the state persists is what keeps a
+        // swallowed [14] from parking the whole match; acted=True must not
+        // block that retry.
+        if ((acted && !resultState) || now < actAt)
             return;
 
-        if (state == profile.StateCodes.HandResult || state == profile.StateCodes.EndOfHand)
+        if (resultState)
         {
-            if (config.AutoPlayAdvanceResults)
-                Advance(profile, state);
+            if (!config.AutoPlayAdvanceResults)
+                return;
+
+            if (resultAttempts < MaxResultAttempts)
+            {
+                if (now >= resultRetryAt)
+                {
+                    Advance(profile, state);
+                    resultRetryAt = now + ResultRetryMs;
+                    resultAttempts++;
+                }
+            }
+            else
+            {
+                LastStatus = "result screen not advancing";
+            }
+
             return;
         }
 
