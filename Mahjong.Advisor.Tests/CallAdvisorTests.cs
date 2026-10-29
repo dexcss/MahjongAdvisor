@@ -277,4 +277,39 @@ public class CallAdvisorTests
         var concealed = Tiles.Parse("112233445m11z");
         Assert.True(CallAdvisor.HasOpenYakuPath(concealed, Build.Tile("6m"), CallKind.Chi));
     }
+
+    [Fact]
+    public void AmbiguousClaimCountsShapesForEveryCandidate()
+    {
+        // The 0.4.3.0 live freeze (bundle 20261030-081345): hand 13679m44p with
+        // melds 345s + 666z, claim ambiguous between 2m/5m/8m. The single-shape
+        // gate counted the representative candidate (one shape) and fired; the
+        // actual tile 8m completes TWO runs (678m and 789m), the state-25
+        // picker opened, and it ignores [11,n] - the match froze. The gate now
+        // requires every candidate to offer exactly one shape.
+        var seats = Build.EmptySeats();
+        seats[0].MeldTiles =
+        [
+            Build.Tile("3s"), Build.Tile("4s"), Build.Tile("5s"),
+            Build.Tile("6z"), Build.Tile("6z"), Build.Tile("6z"),
+        ];
+
+        var table = new TableState
+        {
+            Hand = Tiles.Parse("13679m44p"),
+            CalledMelds = 2,
+            Seats = seats,
+            Observations = Observed.OwnHand | Observed.SafetyReady,
+            WallRemaining = 31,
+        };
+
+        var advisor = new CallAdvisor();
+        int ChiShapesFor(int tile) => advisor
+            .Recommend(table, tile, [CallKind.Chi, CallKind.Pass])
+            .Options.Count(o => o.Kind == CallKind.Chi);
+
+        Assert.Equal(1, ChiShapesFor(Build.Tile("2m"))); // 123m only
+        Assert.Equal(1, ChiShapesFor(Build.Tile("5m"))); // 567m only
+        Assert.Equal(2, ChiShapesFor(Build.Tile("8m"))); // 678m and 789m - the picker
+    }
 }

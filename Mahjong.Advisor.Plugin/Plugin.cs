@@ -57,6 +57,59 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly CallAdvisor callAdvisor = new();
 
+    private sealed record SearchedAdvice(long Key, Advice Advice);
+
+    /// <summary>The latest published search result, if any.</summary>
+    private volatile SearchedAdvice? searched;
+
+    /// <summary>Signature of the state a search was dispatched for.</summary>
+    private long searchDispatched;
+
+    /// <summary>Guards against overlapping background searches.</summary>
+    private int searchInFlight;
+
+    /// <summary>
+    /// Returns the searched advice for this table when one has been published,
+    /// and dispatches the background run when this state has not been searched
+    /// yet. Everything here is lock-free: a torn or stale read at worst falls
+    /// back to the advisor's own answer for one tick.
+    /// </summary>
+    private Advice? ApplySearchedAdvice(TableState table, Advice? advisorAdvice)
+    {
+        var search = Configuration.GetRolloutSearch();
+        if (search is null)
+            return advisorAdvice;
+
+        long key = RolloutSearch.Signature(table);
+        if (searched is { } published && published.Key == key)
+            return published.Advice;
+
+        if (searchDispatched != key
+            && Interlocked.CompareExchange(ref searchInFlight, 1, 0) == 0)
+        {
+            searchDispatched = key;
+            var snapshot = RolloutSearch.Copy(table);
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    searched = new SearchedAdvice(key, search.Recommend(snapshot));
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Rollout search failed; keeping advisor advice.");
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref searchInFlight, 0);
+                }
+            });
+        }
+
+        return advisorAdvice;
+    }
+
     /// <summary>Reads roughly six times a second; the board does not move faster than that.</summary>
     public int ReadIntervalFrames { get; set; } = 10;
 
@@ -186,6 +239,13 @@ public sealed class Plugin : IDalamudPlugin
             LastCallAdvice = BuildCallAdvice(read, LastPrompt);
             LastAdvice = ourTurn ? Configuration.Advisor.Recommend(read.Table) : null;
 
+            // Phase C: the rollout search runs in the background against a
+            // detached snapshot and upgrades the advice on a later tick if it
+            // finishes for this state. The advisor's answer above is always the
+            // fallback, so a slow or failed search can never stall a turn.
+            if (ourTurn && read.Table is not null)
+                LastAdvice = ApplySearchedAdvice(read.Table, LastAdvice);
+
             GameLogger.Record(read, LastAdvice, LastPrompt, LastCallAdvice, PondDiagnostic(), Reader.RotatedPerSeat, Reader.DiscardCountBytes, [.. Reader.UnknownPondTextures],
                 [.. Reader.NewlyVisible.Select(n => $"{n.NodeId}@{n.X:0},{n.Y:0}:{n.TextureId}")]);
             RunAutoPlay(read);
@@ -268,6 +328,37 @@ public sealed class Plugin : IDalamudPlugin
             return LastCallAdvice;
 
         return null;
+    }
+
+    /// <summary>
+    /// Chi shapes the game would offer for each tile that could legally be on
+    /// offer, when the prompt's claim could not be pinned to one tile; null
+    /// when the claim is pinned, chi is not available, or there is nothing to
+    /// check. The 0.4.3.0 live freeze (bundle 20261030-081345): the candidates
+    /// were 2m/5m with one shape each, the actual tile was 8m with two, and
+    /// the state-25 shape picker opened with no way to close it.
+    /// </summary>
+    public List<int>? ChiShapesAcrossCandidates(BoardRead read, CallPrompt prompt)
+    {
+        if (read.Table is null
+            || prompt.HasClaimedTile
+            || !prompt.Available.Contains(CallKind.Chi))
+        {
+            return null;
+        }
+
+        var candidates = CallPromptReader.LegalClaims(read.Table.Hand, prompt.Available);
+        if (candidates.Count == 0)
+            return null;
+
+        var shapes = new List<int>(candidates.Count);
+        foreach (int tile in candidates)
+        {
+            var advice = callAdvisor.Recommend(read.Table, tile, [CallKind.Chi, CallKind.Pass]);
+            shapes.Add(advice.Options.Count(o => o.Kind == CallKind.Chi));
+        }
+
+        return shapes;
     }
 
     /// <summary>

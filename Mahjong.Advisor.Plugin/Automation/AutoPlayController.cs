@@ -102,6 +102,9 @@ public sealed unsafe class AutoPlayController
     private bool chiPickPending;
     private int chiPickAttempts;
     private long chiPickAt;
+
+    /// <summary>The picker-stall warning is logged once per stall, not every tick.</summary>
+    private bool chiStallLogged;
     private bool chiPickerDumped;
 
     public AutoPlayController(Plugin plugin)
@@ -323,6 +326,7 @@ public sealed unsafe class AutoPlayController
         {
             chiPickPending = true;
             chiPickAttempts = 0;
+            chiStallLogged = false;
             chiPickAt = now + ChiPickDelayMs;
             LastStatus = "chi shape picker";
             return;
@@ -338,8 +342,14 @@ public sealed unsafe class AutoPlayController
         {
             acted = true;
             LastStatus = "chi picker stalled";
-            Log("chi picker: no acceptance after "
-                + $"{chiPickAttempts} attempts; yielding to the game timer");
+            if (!chiStallLogged)
+            {
+                // This branch runs on every tick (the picker dispatch sits
+                // before the acted guard), so the warning must log once.
+                chiStallLogged = true;
+                Log("chi picker: no acceptance after "
+                    + $"{chiPickAttempts} attempts; yielding to the game timer");
+            }
             return;
         }
 
@@ -646,7 +656,26 @@ public sealed unsafe class AutoPlayController
             // single-shape chi completes straight through with no picker, so
             // only fire those; multi-shape chi passes instead of stalling.
             int chiShapes = callAdvice?.Options.Count(o => o.Kind == CallKind.Chi) ?? 0;
-            if (chiShapes != 1)
+
+            // When the claim could not be pinned to one tile, that count is
+            // only the representative candidate's. The gate has to hold for
+            // every tile that could legally be on offer: 0.4.3.0 fired chi on
+            // an ambiguous prompt whose candidates gave one shape each while
+            // the actual 8m gave two, and the picker that opened had no way
+            // out (bundle 20261030-081345). Passing is always safe.
+            if (chiShapes == 1)
+            {
+                var perCandidate = plugin.ChiShapesAcrossCandidates(read, prompt);
+                if (perCandidate is not null && perCandidate.Any(n => n != 1))
+                {
+                    Log("chi: ambiguous claim; candidate shape counts ["
+                        + string.Join(", ", perCandidate) + "] - a candidate would open the picker");
+                    passLabel = "pass (ambiguous chi claim)";
+                    kind = CallKind.Pass;
+                }
+            }
+
+            if (kind == CallKind.Chi && chiShapes != 1)
             {
                 passLabel = $"pass ({chiShapes} chi shapes)";
                 Log($"chi: {chiShapes} shapes would open the picker; passing");

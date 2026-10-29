@@ -20,6 +20,36 @@ if (args.Length > 2 && args[2] == "matchpair")
     return;
 }
 
+if (args.Length > 2 && args[2] == "rolloutpair")
+{
+    // Phase C A/B: the same advisor plays both arms; arm B's discard choices
+    // are re-ranked by the rollout search built on top of it. Identical seeds,
+    // so the only difference between the arms is the search itself.
+    var advisor = new DiscardAdvisor
+    {
+        AverageDealInCost = 4000,
+        AverageWinValue = 1800,
+    };
+
+    int rollouts = args.Length > 3 && int.TryParse(args[3], out int ro) ? ro : 8;
+    int candidates = args.Length > 4 && int.TryParse(args[4], out int ca) ? ca : 3;
+
+    var search = new RolloutSearch { Base = advisor, Rollouts = rollouts, Candidates = candidates };
+
+    var watch = Stopwatch.StartNew();
+    var comparison = MatchSimulator.Compare(
+        advisor, advisor,
+        policyA: null,
+        policyB: table => search.Recommend(table),
+        hands, seed);
+
+    Console.WriteLine($"rolloutpair: {rollouts} rollouts x {candidates} candidates per searched decision");
+    Console.WriteLine("A = advisor only            B = advisor + rollout search");
+    Console.WriteLine(comparison);
+    Console.WriteLine($"[{watch.Elapsed.TotalMinutes:0}m {watch.Elapsed.Seconds:00}s]");
+    return;
+}
+
 if (args.Length > 2 && args[2] == "matchtune")
 {
     (string Name, DiscardAdvisor Advisor)[] configs =

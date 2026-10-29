@@ -38,6 +38,7 @@ public sealed class HandSimulator
     private readonly Random random;
     private readonly DiscardAdvisor advisor;
     private readonly CallAdvisor callAdvisor;
+    private readonly Func<TableState, Advice>? discardPolicy;
     private readonly int[]?[] riichiPondSnapshots = new int[]?[4];
 
     /// <summary>How often a tenpai opponent declares rather than staying quiet.</summary>
@@ -46,10 +47,11 @@ public sealed class HandSimulator
     /// <summary>How often an opponent takes a pon that improves their hand.</summary>
     public double OpponentCallRate { get; init; } = 0.6;
 
-    public HandSimulator(DiscardAdvisor advisor, int seed)
+    public HandSimulator(DiscardAdvisor advisor, int seed, Func<TableState, Advice>? discardPolicy = null)
     {
         ArgumentNullException.ThrowIfNull(advisor);
         this.advisor = advisor;
+        this.discardPolicy = discardPolicy;
         callAdvisor = new CallAdvisor { Threats = advisor.Threats, NoYakuPenalty = advisor.NoYakuPenalty };
         random = new Random(seed);
     }
@@ -283,7 +285,10 @@ public sealed class HandSimulator
         bool[] riichi, int[] riichiAt, int wallLeft, int drawn)
     {
         var table = BuildTable(hands, ponds, meldTiles, melds, riichi, riichiAt, wallLeft, drawn);
-        return advisor.Recommend(table).Best?.Tile ?? ChooseByShape(hands[0], melds[0]);
+        // The search policy, when installed, sits on top of the advisor and may
+        // re-rank its candidates; otherwise the advisor answers directly.
+        var advice = discardPolicy?.Invoke(table) ?? advisor.Recommend(table);
+        return advice.Best?.Tile ?? ChooseByShape(hands[0], melds[0]);
     }
 
     /// <summary>Baseline opponent: nearest to ready, widest acceptance as tiebreak.</summary>

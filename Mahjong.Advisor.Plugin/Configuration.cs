@@ -71,16 +71,20 @@ public sealed class Configuration : IPluginConfiguration
     public double OpponentHandValue { get; set; } = 4000;
 
     /// <summary>
-    /// Computed views must never be serialised -- Newtonsoft writes every public
-    /// property by default and a computed collection duplicates the whole graph
-    /// on every save. The advisor cache is per config state, not saved.
+    /// Advisor cache state. Private fields are never serialised by Newtonsoft;
+    /// the public computed property below is the one that needs [JsonIgnore].
+    /// Without it every config save embedded the whole DiscardAdvisor /
+    /// ThreatModel graph into the JSON (and every load re-hydrated a dead copy
+    /// of it that the getter immediately replaced).
     /// </summary>
-    [JsonIgnore] private DiscardAdvisor? advisorCache;
-    [JsonIgnore] private double advisorWin;
-    [JsonIgnore] private double advisorDealIn;
-    [JsonIgnore] private double advisorNoten;
-    [JsonIgnore] private double advisorOpponent;
+    private DiscardAdvisor? advisorCache;
+    private double advisorWin;
+    private double advisorDealIn;
+    private double advisorNoten;
+    private double advisorOpponent;
 
+    /// <summary>Shared advisor instance, rebuilt when the tuning values change. Not persisted.</summary>
+    [JsonIgnore]
     public DiscardAdvisor Advisor
     {
         get
@@ -112,6 +116,44 @@ public sealed class Configuration : IPluginConfiguration
 
             return advisorCache;
         }
+    }
+
+    /// <summary>
+    /// Re-rank the advisor's top discards with sampled rollouts. Off by
+    /// default: it changes discard choices, and it only earns its place once a
+    /// paired simulator A/B and a live session agree it helps.
+    /// </summary>
+    public bool RolloutSearch { get; set; }
+
+    /// <summary>Wall-clock budget for one search, in milliseconds. The
+    /// controller's own turn delay gives it room to finish before acting.</summary>
+    public int RolloutBudgetMs { get; set; } = 600;
+
+    [JsonIgnore] private RolloutSearch? rolloutCache;
+    [JsonIgnore] private DiscardAdvisor? rolloutBase;
+
+    /// <summary>
+    /// The search instance, rebuilt only when the advisor itself was rebuilt or
+    /// the feature is switched, so it always wraps the advisor the overlay and
+    /// controller are using. Null when the search is off.
+    /// </summary>
+    public RolloutSearch? GetRolloutSearch()
+    {
+        if (!RolloutSearch)
+            return null;
+
+        var advisor = Advisor;
+        if (rolloutCache is null || !ReferenceEquals(rolloutBase, advisor))
+        {
+            rolloutBase = advisor;
+            rolloutCache = new RolloutSearch
+            {
+                Base = advisor,
+                TimeBudgetMs = Math.Clamp(RolloutBudgetMs, 0, 5000),
+            };
+        }
+
+        return rolloutCache;
     }
 
     public void Initialize()

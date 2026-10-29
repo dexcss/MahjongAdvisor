@@ -66,18 +66,22 @@ public static class MatchSimulator
     /// <summary>
     /// Paired comparison on identical match seeds. Both policies see the same deals
     /// and the same wall order, so the per-match difference is far less noisy than
-    /// comparing two independent runs.
+    /// comparing two independent runs. The optional policies wrap their advisor's
+    /// discard decisions (a null keeps the advisor as-is), which is how the
+    /// rollout search is measured against the plain advisor on identical deals.
     /// </summary>
     public static MatchComparison Compare(
     DiscardAdvisor a,
     DiscardAdvisor b,
+    Func<TableState, Advice>? policyA,
+    Func<TableState, Advice>? policyB,
     int matches,
     int seed)
 {
     var outcomes = new (MatchOutcome First, MatchOutcome Second)[matches];
 
     Parallel.For(0, matches, i =>
-        outcomes[i] = (Play(a, seed + i), Play(b, seed + i)));
+        outcomes[i] = (Play(a, seed + i, discardPolicy: policyA), Play(b, seed + i, discardPolicy: policyB)));
 
     int aBetter = 0;
     int bBetter = 0;
@@ -108,9 +112,12 @@ public static class MatchSimulator
         outcomes.Sum(o => o.Second.OurDealIns) / (double)outcomes.Sum(o => o.Second.Hands));
 }
 
-    public static MatchOutcome Play(DiscardAdvisor advisor, int seed, int maxHands = 14)
+    public static MatchComparison Compare(DiscardAdvisor a, DiscardAdvisor b, int matches, int seed)
+        => Compare(a, b, null, null, matches, seed);
+
+    public static MatchOutcome Play(DiscardAdvisor advisor, int seed, int maxHands = 14, Func<TableState, Advice>? discardPolicy = null)
     {
-        var sim = new HandSimulator(advisor, seed);
+        var sim = new HandSimulator(advisor, seed, discardPolicy);
         var scores = new int[] { 25000, 25000, 25000, 25000 };
         int dealer = 0;
         int honba = 0;

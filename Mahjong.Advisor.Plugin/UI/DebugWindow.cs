@@ -397,6 +397,21 @@ public sealed class DebugWindow : Window
             settingsDirty = true;
         }
 
+        bool search = config.RolloutSearch;
+        if (ImGui.Checkbox("Rollout search (experimental)", ref search))
+        {
+            config.RolloutSearch = search;
+            settingsDirty = true;
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(
+                "Re-ranks the advisor's top discards by playing out sampled completions of the "
+                + "hidden hands in the background, scoring what actually happens to the scores. "
+                + "Costs a little CPU per turn; the searched answer is used when it lands in time, "
+                + "and the plain advisor's answer is always the fallback.");
+        }
+
         if (ImGui.CollapsingHeader("Timing"))
         {
             int turnMin = config.AutoPlayTurnDelayMinMs;
