@@ -130,7 +130,9 @@ public static class MatchSimulator
 
         while (rounds < 8 && hands < maxHands)
         {
-            var outcome = sim.PlayHand(dealer, scores);
+            // East round = 27, South = 28; the round index decides wind yaku
+            // and the dealer premiums in the payment engine.
+            var outcome = sim.PlayHand(dealer, scores, 27 + rounds / 4);
             hands++;
 
             for (int seat = 0; seat < 4; seat++)

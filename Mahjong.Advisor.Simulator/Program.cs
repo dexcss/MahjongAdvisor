@@ -5,6 +5,28 @@ using Mahjong.Advisor.Simulator;
 int hands = args.Length > 0 && int.TryParse(args[0], out int n) ? n : 1000;
 int seed = args.Length > 1 && int.TryParse(args[1], out int s) ? s : 12345;
 
+if (args.Length > 2 && args[2] == "fidelity")
+{
+    // Calibration table for the fidelity opponent model. Live targets come
+    // from the 0.4.4.0 Advanced session (bundle 20261030-095328, 45 hands:
+    // opponent melds 0.69/hand, opponent riichi 1.22/hand) and the handoff's
+    // long-run real rates (our win ~21%, our deal-in ~13%, draw ~16%).
+    var advisor = new DiscardAdvisor();
+
+    var watch = Stopwatch.StartNew();
+    var result = HandSimulator.Run(advisor, hands, seed);
+    Console.WriteLine($"fidelity check: {hands} hands, seed {seed}, [{watch.Elapsed.TotalSeconds:0}s]");
+    Console.WriteLine($"  our win       {result.WinRate * 100,6:0.0}%    live ~21%");
+    Console.WriteLine($"  our deal-in   {result.DealInRate * 100,6:0.0}%    live ~13%");
+    Console.WriteLine($"  draw          {result.DrawRate * 100,6:0.0}%    live ~16%");
+    Console.WriteLine($"  opp win       {result.OpponentWinRate * 100,6:0.0}%    live ~63%");
+    Console.WriteLine($"  opp melds/h   {result.OpponentMeldsPerHand,6:0.00}    live ~0.69");
+    Console.WriteLine($"  opp riichi/h  {result.OpponentRiichiPerHand,6:0.00}    live ~1.22");
+    Console.WriteLine($"  our riichi/h  {result.OurRiichiPerHand,6:0.00}    live ~0.31");
+    Console.WriteLine($"  our pts/hand  {result.AveragePoints,6:0}");
+    return;
+}
+
 if (args.Length > 2 && args[2] == "matchpair")
 {
     var aggressive = new DiscardAdvisor
