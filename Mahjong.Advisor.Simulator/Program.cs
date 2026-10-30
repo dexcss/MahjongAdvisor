@@ -29,14 +29,21 @@ if (args.Length > 2 && args[2] == "fidelity")
 
 if (args.Length > 2 && args[2] == "matchpair")
 {
+    // Paired A/B on identical match seeds: arm A is the shipped baseline,
+    // arm B carries the tuning under test from the command line
+    // (args: <matches> <seed> matchpair [winB] [dealB]).
+    double winB = args.Length > 3 && double.TryParse(args[3], out double w) ? w : 2400;
+    double dealB = args.Length > 4 && double.TryParse(args[4], out double d) ? d : 3200;
+
     var aggressive = new DiscardAdvisor
     {
-        AverageDealInCost = 4000,
-        AverageWinValue = 1800,
+        AverageDealInCost = dealB,
+        AverageWinValue = winB,
     };
 
     var watch = Stopwatch.StartNew();
     var comparison = MatchSimulator.Compare(new DiscardAdvisor(), aggressive, hands, seed);
+    Console.WriteLine($"A = shipped 1800/4000   B = {winB:0}/{dealB:0}");
     Console.WriteLine(comparison);
     Console.WriteLine($"[{watch.Elapsed.TotalSeconds:0}s]");
     return;
@@ -74,13 +81,18 @@ if (args.Length > 2 && args[2] == "rolloutpair")
 
 if (args.Length > 2 && args[2] == "matchtune")
 {
+    // Swept under the fidelity referee, where wins carry dora/ura and the
+    // payout scale is honest. The baseline is the shipped 1800/4000 tuning;
+    // the arms probe whether the dora-aware referee moves the optimum.
     (string Name, DiscardAdvisor Advisor)[] configs =
     [
-        ("baseline", new DiscardAdvisor()),
-        ("deal-in 4000", new DiscardAdvisor { AverageDealInCost = 4000 }),
-        ("deal-in 7000", new DiscardAdvisor { AverageDealInCost = 7000 }),
-        ("win 1000", new DiscardAdvisor { AverageWinValue = 1000 }),
-        ("win 1800", new DiscardAdvisor { AverageWinValue = 1800 }),
+        ("baseline 1800/4000", new DiscardAdvisor()),
+        ("win 2400", new DiscardAdvisor { AverageWinValue = 2400 }),
+        ("win 3000", new DiscardAdvisor { AverageWinValue = 3000 }),
+        ("win 1200", new DiscardAdvisor { AverageWinValue = 1200 }),
+        ("deal-in 3200", new DiscardAdvisor { AverageDealInCost = 3200 }),
+        ("deal-in 5200", new DiscardAdvisor { AverageDealInCost = 5200 }),
+        ("win 2400 / deal 3200", new DiscardAdvisor { AverageWinValue = 2400, AverageDealInCost = 3200 }),
         ("noten 1000", new DiscardAdvisor { NotenPenaltyValue = 1000 }),
         ("noten 2500", new DiscardAdvisor { NotenPenaltyValue = 2500 }),
         ("late wall 18", new DiscardAdvisor { LateWallThreshold = 18 }),
@@ -90,7 +102,7 @@ if (args.Length > 2 && args[2] == "matchtune")
     {
         var watch = Stopwatch.StartNew();
         var summary = MatchSimulator.Run(advisor, hands, seed);
-        Console.WriteLine($"{name,-14} {summary}  [{watch.Elapsed.TotalSeconds:0}s]");
+        Console.WriteLine($"{name,-22} {summary}  [{watch.Elapsed.TotalSeconds:0}s]");
     }
 
     return;
